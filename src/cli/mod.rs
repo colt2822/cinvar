@@ -388,6 +388,15 @@ pub fn doctor_report() -> serde_json::Value {
             ffmpeg_version = out.stdout.lines().next().unwrap_or("").to_string();
         }
     }
+    let drawtext = ffmpeg.as_ref().map(|f| {
+        shproc::run(
+            f,
+            &["-hide_banner".into(), "-filters".into()],
+            &shproc::ProcOpts::default().with_timeout(20),
+        )
+        .map(|o| o.stdout.contains(" drawtext "))
+        .unwrap_or(false)
+    });
     let font_count = shproc::which("fc-list")
         .and_then(|fc| shproc::run(&fc, &[], &shproc::ProcOpts::default().with_timeout(15)).ok())
         .map(|out| out.stdout.lines().count())
@@ -404,6 +413,7 @@ pub fn doctor_report() -> serde_json::Value {
         "encoders": encoders,
         "hardware_encoding": !encoders.iter().all(|e| !e.contains("nvenc") && !e.contains("vaapi")),
         "fonts": font_count,
+        "drawtext_filter": drawtext,
         "blender": crate::blender::available().map(|p| p.to_string_lossy().to_string()),
         "python": shproc::which("python3").map(|p| p.to_string_lossy().to_string()),
         "config_file": Config::path().to_string_lossy().to_string(),
@@ -631,6 +641,9 @@ fn dispatch(cli: &Cli) -> Result<()> {
                     report["encoders"].as_array().map(|a| a.len()).unwrap_or(0)
                 ));
                 text.push_str(&format!("  fonts         {}\n", report["fonts"]));
+                if report["drawtext_filter"] == false {
+                    text.push_str("  drawtext      MISSING - titles/captions cannot render; install a full FFmpeg build (libfreetype)\n");
+                }
                 text.push_str(&format!(
                     "  blender       {}\n",
                     report["blender"]

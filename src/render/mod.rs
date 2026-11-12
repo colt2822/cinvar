@@ -718,11 +718,16 @@ pub fn render(
             .code()
             .map(|c| c.to_string())
             .unwrap_or_else(|| "signal".to_string());
+        let hint = if detail.contains("No such filter: 'drawtext'") {
+            "this FFmpeg build has no 'drawtext' filter (needs libfreetype), so titles and burned-in captions cannot render. Install a full FFmpeg build (e.g. Homebrew: brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-freetype; Windows: the gyan.dev full build) or remove text from the timeline. `cinvar doctor` shows drawtext support"
+        } else {
+            "check the render plan for unsupported filters or a bad input file"
+        };
         return Err(Error::new(
             ErrorCode::Render,
             format!("ffmpeg exited with {exit}\n{detail}"),
         )
-        .with_hint("check the render plan for unsupported filters or a bad input file"));
+        .with_hint(hint));
     }
 
     progress(0.97, "validating output");

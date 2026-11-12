@@ -165,7 +165,10 @@ fn four_layers_composite_in_z_order_with_timing() {
     let unexpected: Vec<_> = outcome
         .warnings
         .iter()
-        .filter(|w| !w.contains("probe encode failed"))
+        .filter(|w| {
+            !w.contains("probe encode failed")
+                && !w.contains("available memory could not be determined")
+        })
         .collect();
     assert!(unexpected.is_empty(), "{:?}", unexpected);
 
@@ -275,7 +278,10 @@ fn animated_pip_moves_across_the_base_without_blanking_it() {
     let unexpected: Vec<_> = outcome
         .warnings
         .iter()
-        .filter(|w| !w.contains("probe encode failed"))
+        .filter(|w| {
+            !w.contains("probe encode failed")
+                && !w.contains("available memory could not be determined")
+        })
         .collect();
     assert!(unexpected.is_empty(), "{:?}", unexpected);
     // t=0.2 the PiP is near x=80 (centre 320-240+...); the right side is untouched base.

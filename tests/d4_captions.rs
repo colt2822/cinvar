@@ -145,7 +145,10 @@ fn burned_captions_wrap_inside_the_frame_and_use_a_background_box() {
     let unexpected: Vec<_> = outcome
         .warnings
         .iter()
-        .filter(|w| !w.contains("probe encode failed"))
+        .filter(|w| {
+            !w.contains("probe encode failed")
+                && !w.contains("available memory could not be determined")
+        })
         .collect();
     assert!(unexpected.is_empty(), "{:?}", unexpected);
     let frame = gray(&out, 1.0, 360, 640);

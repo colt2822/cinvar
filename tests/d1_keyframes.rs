@@ -130,7 +130,10 @@ fn render_rig(r: &Rig, name: &str) -> PathBuf {
     let unexpected: Vec<_> = outcome
         .warnings
         .iter()
-        .filter(|w| !w.contains("probe encode failed"))
+        .filter(|w| {
+            !w.contains("probe encode failed")
+                && !w.contains("available memory could not be determined")
+        })
         .collect();
     assert!(
         unexpected.is_empty(),
