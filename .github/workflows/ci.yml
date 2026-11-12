@@ -26,9 +26,18 @@ jobs:
       - name: Install ffmpeg (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      # macOS/Windows: a full FFmpeg build (with drawtext/libfreetype) that is really on PATH.
-      - name: Install ffmpeg (macOS/Windows)
-        if: runner.os != 'Linux'
+      # macOS: Homebrew's default ffmpeg has no drawtext (libfreetype); ffmpeg-full does.
+      - name: Install ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          if brew install ffmpeg-full; then
+            echo "$(brew --prefix ffmpeg-full)/bin" >> "$GITHUB_PATH"
+          else
+            brew install ffmpeg
+          fi
+      # Windows: a full build (gyan.dev, with drawtext) that is really on PATH.
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
         uses: FedericoCarboni/setup-ffmpeg@v3
       - name: Cache cargo
         uses: actions/cache@v4

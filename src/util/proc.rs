@@ -189,10 +189,27 @@ pub fn which(program: &str) -> Option<PathBuf> {
         };
     }
     let path_var = std::env::var_os("PATH")?;
+    // Windows resolves `ffmpeg` to `ffmpeg.exe` (and friends) through PATHEXT.
+    let exts: Vec<String> = if cfg!(windows) && Path::new(program).extension().is_none() {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string())
+            .split(';')
+            .filter(|e| !e.is_empty())
+            .map(|e| e.to_ascii_lowercase())
+            .collect()
+    } else {
+        Vec::new()
+    };
     for dir in std::env::split_paths(&path_var) {
         let full = dir.join(program);
         if full.is_file() {
             return Some(full);
+        }
+        for ext in &exts {
+            let with_ext = dir.join(format!("{program}{ext}"));
+            if with_ext.is_file() {
+                return Some(with_ext);
+            }
         }
     }
     None
