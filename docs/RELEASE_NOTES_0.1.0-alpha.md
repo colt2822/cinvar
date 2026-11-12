@@ -35,3 +35,10 @@ own licences; none are bundled. Inventory only, not legal advice (docs/LICENSES.
 
 ## Artifacts
 Source (GitHub-generated archives) and a Linux x86_64 build of the CLI with its SHA-256, built by `scripts/package.sh` from the tagged commit.
+
+
+## Known issues
+
+- `ducking_lowers_music_only_while_speech_plays` fails intermittently on FFmpeg 8 (passed on other runs; unresolved). FFmpeg 6.1 is the gating configuration.
+- Windows: text/caption rendering tests fail in CI (FFmpeg drawtext/Fontconfig crash). No plugin sandbox on Windows/macOS.
+- No formal third-party security audit; a focused self/Codex review is documented in `docs/SECURITY_REVIEW_PACKAGE.md`.

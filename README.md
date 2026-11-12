@@ -4,7 +4,7 @@
 
 > **Status: public alpha (0.1.0), source release.** The engine is real and tested; it is a command-line tool plus an
 > MCP server. There is **no GUI and no installer** (a local web UI exists, `cinvar ui`). Windows and macOS builds
-> have **not been verified**. RunPod and ComfyUI support is **experimental (mock-tested only)**. See
+> are **partially verified** (macOS suite passed in CI; Windows text rendering fails). RunPod and ComfyUI support is **experimental (mock-tested only)**. See
 > [Status](#status-what-is-verified-and-what-is-not).
 
 CINVAR gives people *and* AI agents the capabilities of a video editor: import media, build a timeline, render with
