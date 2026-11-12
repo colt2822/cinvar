@@ -105,7 +105,7 @@ NOT TESTED = code exists, never executed. PLANNED = not implemented. Numbers com
 | Model providers (OpenAI-compatible, Anthropic, Gemini, Ollama) | MOCK - wire formats unit-tested, no live vendor call in CI. Claude Code over MCP was driven for real |
 | RunPod cloud rendering | MOCK - never run against a real account |
 | ComfyUI | MOCK - never run against a real server |
-| Windows, macOS | NOT TESTED - CI workflow written but never run; no plugin sandbox there |
+| Windows, macOS | PARTIAL - CI builds and runs the suite on both (experimental, non-gating). macOS: all tests passed in the last run (quickstart script fixed after). Windows: ~6 text-rendering tests fail (FFmpeg drawtext/Fontconfig crash on the CI runner). No plugin sandbox on either |
 | Independent security review | PENDING - self-review only, see [docs/SECURITY_REVIEW_PACKAGE.md](docs/SECURITY_REVIEW_PACKAGE.md) |
 | Desktop GUI/installer, WhisperX, DeepFilterNet, AI upscaling, OpenFX, remote MCP | PLANNED |
 

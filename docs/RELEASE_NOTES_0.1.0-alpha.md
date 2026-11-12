@@ -18,7 +18,7 @@ Build it from source: `./examples/quickstart.sh` (needs Rust and FFmpeg).
 - **ComfyUI** workflow runner — mock-tested only.
 - Model providers (OpenAI-compatible, Anthropic, Gemini, Ollama): wire formats unit-tested; Claude Code over MCP was driven for real.
 - Codex / Cursor / Gemini CLI MCP configs in docs/MCP.md are templates, not tested against those clients.
-- CI workflow: Linux gates; Windows and macOS builds are **not verified** (see the Actions tab for the current state).
+- CI workflow: Linux gates; Linux (Ubuntu 24.04, FFmpeg 6.1 and 8) is green. macOS and Windows run as experimental, non-gating jobs: macOS test suite passed in the latest run; Windows fails the drawtext/text-rendering tests (Fontconfig crash in the CI FFmpeg build). Treat both platforms as unsupported for now.
 
 ## PLANNED (not implemented)
 Desktop GUI and installers, Windows/macOS plugin sandbox, WhisperX, DeepFilterNet, AI upscaling, OpenFX, remote (HTTP) MCP,

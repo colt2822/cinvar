@@ -8,7 +8,9 @@
 # deterministically; it is a smoke test of the real engine, not an AI.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-OUT="$(realpath -m "${1:-quickstart-out}")"
+OUT_ARG="${1:-quickstart-out}"
+mkdir -p "$OUT_ARG"
+OUT="$(cd "$OUT_ARG" && pwd -P)"
 command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null || { echo "FFmpeg + ffprobe are required (apt/brew/choco install ffmpeg)"; exit 1; }
 command -v cargo >/dev/null || { echo "Rust is required: https://rustup.rs"; exit 1; }
 
