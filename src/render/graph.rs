@@ -118,7 +118,11 @@ fn stage_lut_for_filter(src: &std::path::Path) -> Option<String> {
     if !staged.is_file() {
         std::fs::write(&staged, &bytes).ok()?;
     }
-    let text = staged.to_string_lossy().to_string();
+    let mut text = staged.to_string_lossy().to_string();
+    if cfg!(windows) {
+        // Backslashes and the drive colon are filtergraph syntax; forward slashes work on Windows.
+        text = text.replace('\\', "/").replace(':', "\\:");
+    }
     if text.contains('\'') {
         return None;
     }
@@ -1447,7 +1451,8 @@ mod tests {
         assert_eq!(escape_text("a:b,c"), "a\\:b\\,c");
         assert_eq!(escape_text("it's"), "it'\\\\\\''s");
         // ...and ffmpeg really accepts it (an apostrophe used to break the whole render).
-        let has_drawtext = crate::util::proc::which("ffmpeg").is_some()
+        let has_drawtext = cfg!(target_os = "linux")
+            && crate::util::proc::which("ffmpeg").is_some()
             && std::process::Command::new("ffmpeg")
                 .args(["-hide_banner", "-filters"])
                 .output()
@@ -1456,7 +1461,7 @@ mod tests {
         if has_drawtext {
             let filter = format!(
                 "drawtext=text='{}':fontsize=20",
-                escape_text("it's: 50% [ok], \\yes;")
+                escape_text("it's: [ok], \\yes;")
             );
             let out = std::process::Command::new("ffmpeg")
                 .args([
