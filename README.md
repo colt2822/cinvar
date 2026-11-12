@@ -3,7 +3,7 @@
 **An open-source, model-agnostic engine for AI-native video production** - Rust, FFmpeg, Blender, up to 8K, MCP.
 
 > **Status: public alpha (0.1.0), source release.** The engine is real and tested; it is a command-line tool plus an
-> MCP server. There is **no GUI and no installer** (a local web UI exists, `cinvar ui`). Windows and macOS builds
+> MCP server. There is **no native installer** (a local web studio opens from a desktop icon on Linux, or `cinvar ui`). Windows and macOS builds
 > are **partially verified** (macOS suite passed in CI; Windows text rendering fails). RunPod and ComfyUI support is **experimental (mock-tested only)**. See
 > [Status](#status-what-is-verified-and-what-is-not).
 
@@ -12,6 +12,10 @@ FFmpeg or Blender, inspect the result, revise. Use it by hand, from any MCP clie
 agents), or with your own model (OpenAI-compatible, Anthropic, Gemini, Ollama, llama.cpp). It runs entirely on your
 machine: **no account, no telemetry, no subscription, no ELYREON services, no paid API required.** RunPod cloud
 rendering and ComfyUI are optional add-ons you connect with your own accounts/installs.
+
+## Launching the app (no terminal)
+
+Linux: run `packaging/linux/install-desktop.sh` once (after building, or from the release tarball). A **CINVAR** icon appears in your app menu and on the Desktop; click it and the studio opens in its own window (projects are saved in `~/CINVAR Projects`). Needs FFmpeg installed. Windows/macOS have no click-to-run packaging yet. In the studio: drag media in, chat with the assistant, preview/export, and customise theme, accent colour, layout and shortcuts under ⚙ (Ctrl+K opens the command palette).
 
 ## Try it in two minutes (no AI model, no network)
 

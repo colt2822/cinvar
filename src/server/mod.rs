@@ -107,7 +107,10 @@ fn guard_request(request: &Request, port: u16) -> std::result::Result<(), String
         let ct = header("Content-Type")
             .unwrap_or_default()
             .to_ascii_lowercase();
-        if !ct.starts_with("application/json") {
+        let upload = request.url().split('?').next() == Some("/api/upload");
+        if !(ct.starts_with("application/json")
+            || (upload && ct.starts_with("application/octet-stream")))
+        {
             return Err("Content-Type must be application/json".into());
         }
     }
@@ -169,7 +172,7 @@ fn handle(mut request: Request, state: Shared) -> Result<()> {
                     "revision": project.revision,
                     "issues": crate::project::ops::validate(&project),
                     "assets": project.assets.iter().map(|a| json!({"id": a.id, "name": a.display_name(), "kind": format!("{:?}", a.kind).to_lowercase(), "seconds": a.info.as_ref().map(|i| i.duration.as_secs_f64()), "missing": a.missing})).collect::<Vec<_>>(),
-                    "timelines": project.timelines.iter().map(|t| json!({"name": t.name, "duration": t.duration().as_secs_f64(), "clips": t.tracks.iter().map(|tr| tr.clips.len()).sum::<usize>(), "width": t.width, "height": t.height})).collect::<Vec<_>>(),
+                    "timelines": project.timelines.iter().map(|t| json!({"name": t.name, "duration": t.duration().as_secs_f64(), "clips": t.tracks.iter().map(|tr| tr.clips.len()).sum::<usize>(), "width": t.width, "height": t.height, "fps": t.fps.as_f64(), "tracks": t.tracks.iter().map(|tr| json!({"id": tr.id, "name": tr.name, "kind": format!("{:?}", tr.kind).to_lowercase(), "muted": tr.muted, "hidden": tr.hidden, "locked": tr.locked, "clips": tr.clips.iter().map(|c| json!({"id": c.id, "name": if c.name.is_empty() { c.text.as_ref().map(|x| x.text.clone()).unwrap_or_default() } else { c.name.clone() }, "asset": c.asset, "start": c.timeline_start.as_secs_f64(), "duration": c.duration().as_secs_f64(), "speed": c.speed, "text": c.text.is_some(), "effects": c.effects.len()})).collect::<Vec<_>>()})).collect::<Vec<_>>()})).collect::<Vec<_>>(),
                     "renders": std::fs::read_dir(store.renders_dir()).map(|d| d.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect::<Vec<_>>()).unwrap_or_default(),
                 }),
                 Err(err) => json!({"open": false, "error": err.to_string()}),
@@ -347,25 +350,156 @@ fn handle(mut request: Request, state: Shared) -> Result<()> {
             .clone()
             .ok_or_else(|| Error::not_found("no project is open"))?;
         let store = ProjectStore::open(&dir)?;
-        let file = paths::ensure_within(&store.assets_dir(), Path::new(name))?;
+        let decoded = percent_decode(name);
+        let file = match paths::ensure_within(&store.assets_dir(), Path::new(&decoded)) {
+            Ok(f) if f.exists() => f,
+            _ => paths::ensure_within(&store.renders_dir(), Path::new(&decoded))?,
+        };
         if !file.exists() {
             return request
                 .respond(json_response(404, &json!({"error": "not found"})))
                 .map_err(Error::from);
         }
-        let bytes = std::fs::read(&file)?;
         let ctype = match file.extension().and_then(|e| e.to_str()).unwrap_or("") {
             "mp4" | "m4v" => "video/mp4",
             "webm" => "video/webm",
             "mov" => "video/quicktime",
+            "mkv" => "video/x-matroska",
             "png" => "image/png",
             "jpg" | "jpeg" => "image/jpeg",
             "mp3" => "audio/mpeg",
             "wav" => "audio/wav",
+            "m4a" => "audio/mp4",
             _ => "application/octet-stream",
         };
+        // Byte ranges so the player can seek without loading the whole file.
+        let total = std::fs::metadata(&file)?.len();
+        let range = request
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv("Range"))
+            .and_then(|h| {
+                h.value
+                    .as_str()
+                    .strip_prefix("bytes=")
+                    .map(|v| v.to_string())
+            });
+        let (start, end, partial) = match range.as_deref().and_then(|r| r.split_once('-')) {
+            Some((a, b)) if total > 0 => {
+                let start = a.parse::<u64>().unwrap_or(0).min(total - 1);
+                let end = b
+                    .parse::<u64>()
+                    .ok()
+                    .unwrap_or(total - 1)
+                    .min(total - 1)
+                    .max(start);
+                (start, end.min(start + 32 * 1024 * 1024), true)
+            }
+            _ => (0, total.saturating_sub(1), false),
+        };
+        let mut f = std::fs::File::open(&file)?;
+        {
+            use std::io::Seek;
+            f.seek(std::io::SeekFrom::Start(start))?;
+        }
+        let mut buf = Vec::new();
+        if total > 0 {
+            use std::io::Read;
+            f.take(end - start + 1).read_to_end(&mut buf)?;
+        }
+        let mut resp = text_response(if partial { 206 } else { 200 }, ctype, buf)
+            .with_header(Header::from_bytes(&b"Accept-Ranges"[..], &b"bytes"[..]).unwrap());
+        if partial {
+            resp = resp.with_header(
+                Header::from_bytes(
+                    &b"Content-Range"[..],
+                    format!("bytes {start}-{end}/{total}").as_bytes(),
+                )
+                .unwrap(),
+            );
+        }
+        return request.respond(resp).map_err(Error::from);
+    }
+
+    if method == Method::Post && path == "/api/upload" {
+        // Human drag-and-drop import from the UI: the file is streamed to a temp file inside the
+        // project, probed by content, copied into the project's assets, then the temp file is removed.
+        let dir = state
+            .lock()
+            .unwrap()
+            .project_dir
+            .clone()
+            .ok_or_else(|| Error::not_found("no project is open"))?;
+        let store = ProjectStore::open(&dir)?;
+        let query = url.split_once('?').map(|x| x.1).unwrap_or("");
+        let raw = query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix("name="))
+            .unwrap_or("upload");
+        let decoded = percent_decode(raw);
+        let safe: String = decoded
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or("upload")
+            .chars()
+            .filter(|c| c.is_alphanumeric() || " ._-()".contains(*c))
+            .collect();
+        let safe = if safe.trim_matches('.').is_empty() {
+            "upload".to_string()
+        } else {
+            safe
+        };
+        let tmp_dir = store.root.join(".uploads");
+        std::fs::create_dir_all(&tmp_dir)?;
+        let tmp = tmp_dir.join(&safe);
+        paths::unlink_if_symlink(&tmp);
+        {
+            use std::io::Read;
+            let mut file = std::fs::File::create(&tmp)?;
+            let mut reader = request.as_reader().take(16 * 1024 * 1024 * 1024);
+            std::io::copy(&mut reader, &mut file)?;
+        }
+        let result = (|| -> Result<serde_json::Value> {
+            crate::media::probe_untrusted(&tmp).map_err(|e| {
+                Error::new(
+                    crate::error::ErrorCode::InvalidInput,
+                    format!("not importable as media: {}", e.message),
+                )
+            })?;
+            let mut project = store.load()?;
+            let asset = store.import_asset(&mut project, &tmp, "ui:upload")?;
+            store.save(&mut project)?;
+            Ok(json!({"asset_id": asset.id, "name": asset.display_name()}))
+        })();
+        let _ = std::fs::remove_file(&tmp);
+        return match result {
+            Ok(v) => request.respond(json_response(200, &v)).map_err(Error::from),
+            Err(err) => request
+                .respond(json_response(
+                    400,
+                    &json!({"error": crate::secrets::redact(&err.to_string())}),
+                ))
+                .map_err(Error::from),
+        };
+    }
+
+    if method == Method::Post && path == "/api/model" {
+        let body = read_body(&mut request);
+        let name = body
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let mut config = Config::load()?;
+        if !config.models.contains_key(name) {
+            return request
+                .respond(json_response(400, &json!({"error": "unknown model"})))
+                .map_err(Error::from);
+        }
+        config.active_model = Some(name.to_string());
+        config.save()?;
+        state.lock().unwrap().session = None;
         return request
-            .respond(text_response(200, ctype, bytes))
+            .respond(json_response(200, &json!({"active": name})))
             .map_err(Error::from);
     }
 
@@ -390,4 +524,22 @@ fn handle(mut request: Request, state: Shared) -> Result<()> {
     request
         .respond(json_response(404, &json!({"error": "unknown route"})))
         .map_err(Error::from)
+}
+
+fn percent_decode(raw: &str) -> String {
+    let b = raw.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 3 <= b.len() {
+            if let Ok(v) = u8::from_str_radix(&raw[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
 }

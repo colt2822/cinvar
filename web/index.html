@@ -1,183 +1,502 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="midnight">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CINVAR</title>
+<title>CINVAR Studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' rx='56' fill='%23111827'/%3E%3Cpath d='M168 76a64 64 0 1 0 0 104' fill='none' stroke='%2338bdf8' stroke-width='28' stroke-linecap='round'/%3E%3Cpath d='M120 108l52 20-52 20z' fill='%23f8fafc'/%3E%3C/svg%3E">
 <style>
-  :root { color-scheme: dark; --bg:#0b0d10; --panel:#14181d; --line:#232a32; --fg:#e7ecf2; --muted:#8b96a5; --accent:#4f8cff; }
-  * { box-sizing: border-box; }
-  body { margin:0; font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
-  header { display:flex; align-items:baseline; gap:12px; padding:14px 20px; border-bottom:1px solid var(--line); }
-  header h1 { font-size:16px; margin:0; letter-spacing:.18em; }
-  header span { color:var(--muted); font-size:12px; }
-  main { display:grid; grid-template-columns: 280px 1fr 320px; gap:16px; padding:16px; height:calc(100vh - 56px); }
-  section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; overflow:auto; }
-  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:var(--muted); margin:0 0 10px; }
-  .row { display:flex; gap:8px; margin-bottom:8px; }
-  input, textarea, button, select { font:inherit; background:#0f1318; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:7px 9px; }
-  input, textarea { width:100%; }
-  textarea { resize:vertical; min-height:64px; }
-  button { cursor:pointer; background:#1b2330; }
-  button:hover { border-color:var(--accent); }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#04101f; font-weight:600; }
-  ul { list-style:none; margin:0; padding:0; }
-  li { padding:6px 0; border-bottom:1px solid var(--line); font-size:13px; }
-  .muted { color:var(--muted); font-size:12px; }
-  #chat { display:flex; flex-direction:column; height:100%; }
-  #log { flex:1; overflow:auto; padding-right:6px; }
-  .msg { margin-bottom:10px; padding:8px 10px; border-radius:8px; background:#0f1318; border:1px solid var(--line); white-space:pre-wrap; }
-  .msg.user { border-color:#2b3d5c; }
-  .msg.tool { font-size:12px; color:var(--muted); }
-  .pill { display:inline-block; padding:1px 7px; border:1px solid var(--line); border-radius:999px; font-size:11px; color:var(--muted); margin-right:4px; }
-  progress { width:100%; height:8px; }
-  video { width:100%; border-radius:8px; margin-top:8px; background:#000; }
-  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+:root{
+  --accent:#38bdf8; --accent-ink:#04121c; --radius:10px; --fs:13px; --pad:10px;
+  --left:290px; --right:380px; --tl-h:260px;
+  --bg:#0a0c10; --bg2:#10141a; --panel:#141922; --panel2:#1a2029; --line:#252c38; --fg:#e8edf4; --muted:#8793a5; --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+  --v:#3b82f6; --a:#10b981; --c:#f59e0b; --o:#a855f7;
+}
+[data-theme=graphite]{--bg:#111111;--bg2:#171717;--panel:#1c1c1c;--panel2:#242424;--line:#2e2e2e;--fg:#ededed;--muted:#8d8d8d}
+[data-theme=ember]{--bg:#120c0b;--bg2:#1a1110;--panel:#211615;--panel2:#2a1c1a;--line:#3a2724;--fg:#f4e9e6;--muted:#a58c86}
+[data-theme=forest]{--bg:#0a110e;--bg2:#101a15;--panel:#15211b;--panel2:#1b2a22;--line:#26382d;--fg:#e6f1ea;--muted:#86a393}
+[data-theme=light]{--bg:#eef1f5;--bg2:#e4e8ee;--panel:#ffffff;--panel2:#f3f5f8;--line:#d5dbe4;--fg:#18202b;--muted:#5d6b7e;--accent-ink:#fff}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font:var(--fs)/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg);overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:calc(var(--radius) - 3px);padding:6px 11px;transition:.12s}
+button:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel2))}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:650}
+button.primary:hover{filter:brightness(1.1)}
+button.ghost{background:transparent;border-color:transparent}
+button.ghost:hover{background:var(--panel2);border-color:var(--line)}
+button:disabled{opacity:.45;cursor:default}
+input,select,textarea{background:var(--bg2);border:1px solid var(--line);border-radius:calc(var(--radius) - 3px);padding:7px 10px;outline:none;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+input[type=range]{padding:0;accent-color:var(--accent)}
+input[type=color]{padding:2px;height:30px;width:46px}
+input[type=checkbox]{width:auto;accent-color:var(--accent)}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px;border:2px solid transparent;background-clip:content-box}
+.app{display:grid;grid-template-rows:48px 1fr;height:100vh}
+/* top bar */
+.top{display:flex;align-items:center;gap:10px;padding:0 12px;background:var(--bg2);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:9px;font-weight:750;letter-spacing:.2em;font-size:13px}
+.brand svg{width:28px;height:28px}
+.sep{width:1px;height:22px;background:var(--line);margin:0 4px}
+.projbtn{display:flex;gap:8px;align-items:center;max-width:300px}
+.projbtn b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.spacer{flex:1}
+.top select{width:auto;max-width:190px;padding:5px 8px}
+.pbar{width:150px;height:6px;background:var(--line);border-radius:6px;overflow:hidden;display:none}
+.pbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+/* workspace */
+.work{display:grid;grid-template-columns:var(--left) 5px 1fr 5px var(--right);min-height:0}
+.work.noleft{grid-template-columns:0 0 1fr 5px var(--right)}.work.noright{grid-template-columns:var(--left) 5px 1fr 0 0}.work.noleft.noright{grid-template-columns:0 0 1fr 0 0}
+.work.noleft>.left,.work.noleft>.rz1,.work.noright>.right,.work.noright>.rz2{display:none}
+.rz{cursor:col-resize;background:var(--line);opacity:.5}.rz:hover{background:var(--accent);opacity:1}
+.panel{background:var(--panel);display:flex;flex-direction:column;min-height:0;min-width:0}
+.tabs{display:flex;gap:2px;padding:6px 8px 0;border-bottom:1px solid var(--line);background:var(--bg2)}
+.tab{padding:7px 12px;border:none;border-bottom:2px solid transparent;border-radius:6px 6px 0 0;background:transparent;color:var(--muted);font-weight:600}
+.tab.on{color:var(--fg);border-bottom-color:var(--accent);background:var(--panel)}
+.tab:hover{background:var(--panel);}
+.body{flex:1;overflow:auto;padding:var(--pad);min-height:0}
+.drop{border:2px dashed var(--line);border-radius:var(--radius);padding:14px;text-align:center;color:var(--muted);margin-bottom:10px;transition:.12s}
+.drop.over{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--fg)}
+.drop button{margin-top:6px}
+.bin{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px}
+.asset{background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:8px;cursor:pointer;position:relative;overflow:hidden}
+.asset:hover,.asset.on{border-color:var(--accent)}
+.asset .ico{height:62px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:6px;background:linear-gradient(135deg,color-mix(in srgb,var(--k) 38%,var(--bg2)),var(--bg2))}
+.asset .nm{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.asset .mt{font-size:11px;color:var(--muted)}
+.asset .add{position:absolute;top:6px;right:6px;padding:1px 7px;font-size:12px;display:none}
+.asset:hover .add{display:block}
+.k-video{--k:var(--v)}.k-audio{--k:var(--a)}.k-image{--k:var(--c)}
+.empty{color:var(--muted);text-align:center;padding:22px 8px}
+/* center */
+.center{display:grid;grid-template-rows:1fr 6px var(--tl-h);min-height:0;min-width:0;background:var(--bg)}
+.stage{display:flex;flex-direction:column;min-height:0;padding:12px;gap:8px;align-items:center;justify-content:center}
+.screen{flex:1;min-height:0;width:100%;display:flex;align-items:center;justify-content:center;background:#000;border-radius:var(--radius);border:1px solid var(--line);overflow:hidden;position:relative}
+.screen video{max-width:100%;max-height:100%;display:none}.screen.has video{display:block}
+.screen .ph{color:#7c8798;text-align:center;position:absolute;pointer-events:none}
+.screen .ph svg{width:64px;height:64px;opacity:.5}
+.statline{display:flex;gap:14px;color:var(--muted);font-size:12px;width:100%}
+.rzh{cursor:row-resize;background:var(--line);opacity:.5}.rzh:hover{background:var(--accent);opacity:1}
+.tl{display:flex;flex-direction:column;background:var(--panel);min-height:0;border-top:1px solid var(--line)}
+.tlbar{display:flex;gap:10px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--bg2)}
+.tlbar input[type=range]{width:120px}
+.tlscroll{flex:1;overflow:auto;position:relative}
+.tlin{position:relative;min-height:100%}
+.ruler{position:sticky;top:0;height:24px;background:var(--bg2);border-bottom:1px solid var(--line);z-index:3}
+.ruler span{position:absolute;top:4px;font-size:10px;color:var(--muted);transform:translateX(3px)}
+.ruler i{position:absolute;top:14px;bottom:0;width:1px;background:var(--line)}
+.trk{position:relative;height:46px;border-bottom:1px solid var(--line)}
+.trk .lab{position:sticky;left:0;z-index:2;display:inline-flex;align-items:center;gap:6px;height:100%;padding:0 10px;background:var(--bg2);border-right:1px solid var(--line);font-size:11px;font-weight:650;width:96px;overflow:hidden;white-space:nowrap}
+.clip{position:absolute;top:5px;height:36px;border-radius:7px;padding:3px 7px;font-size:11px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;color:#fff;border:1px solid rgba(255,255,255,.18);background:var(--ck)}
+.clip.on{outline:2px solid var(--fg)}
+.clip small{display:block;opacity:.75;font-weight:500}
+.kv-video{--ck:var(--v)}.kv-audio{--ck:var(--a)}.kv-caption{--ck:var(--c)}.kv-overlay{--ck:var(--o)}
+.playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--bad);z-index:4;pointer-events:none;display:none}
+/* chat */
+.chat{display:flex;flex-direction:column;height:100%;min-height:0}
+.log{flex:1;overflow:auto;padding:var(--pad);display:flex;flex-direction:column;gap:10px}
+.msg{padding:9px 12px;border-radius:12px;max-width:94%;white-space:pre-wrap;word-wrap:break-word}
+.msg.user{align-self:flex-end;background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:3px}
+.msg.assistant{align-self:flex-start;background:var(--panel2);border:1px solid var(--line);border-bottom-left-radius:3px}
+.msg.sys{align-self:center;color:var(--muted);font-size:12px;background:transparent;text-align:center}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.chip{font-size:11px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--muted);background:var(--bg2)}
+.chip.ok{color:var(--ok)}.chip.bad{color:var(--bad)}
+.sugg{display:flex;flex-wrap:wrap;gap:6px;padding:0 var(--pad) 8px}
+.sugg button{font-size:12px;border-radius:99px;padding:4px 10px;color:var(--muted)}
+.composer{padding:var(--pad);border-top:1px solid var(--line);background:var(--bg2)}
+.composer textarea{min-height:66px;max-height:200px;resize:vertical}
+.composer .row{display:flex;gap:8px;margin-top:8px;align-items:center}
+.dots span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--muted);margin-right:3px;animation:b 1s infinite}.dots span:nth-child(2){animation-delay:.15s}.dots span:nth-child(3){animation-delay:.3s}
+@keyframes b{0%,80%,100%{opacity:.25}40%{opacity:1}}
+/* inspector / lists */
+.kv{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;font-size:12px}.kv dt{color:var(--muted)}.kv dd{margin:0;word-break:break-word}
+.list .it{display:flex;gap:8px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:6px;background:var(--panel2);cursor:pointer}
+.list .it:hover{border-color:var(--accent)}
+.list .it span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+h3{margin:14px 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+h3:first-child{margin-top:0}
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50;backdrop-filter:blur(3px)}
+.modal.on{display:flex}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(640px,94vw);max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.card header{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);font-weight:700}
+.card .in{padding:16px 18px}
+.field{display:grid;grid-template-columns:170px 1fr;gap:10px;align-items:center;margin-bottom:12px}
+.field label{color:var(--muted)}
+.sw{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.sw i{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent}
+.sw i.on{border-color:var(--fg)}
+.themes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.themes button{padding:10px;text-align:center}
+.themes button.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.pal{position:fixed;top:14vh;left:50%;transform:translateX(-50%);width:min(560px,92vw);background:var(--panel);border:1px solid var(--line);border-radius:14px;z-index:60;box-shadow:0 20px 60px rgba(0,0,0,.55);display:none}
+.pal.on{display:block}
+.pal .res{max-height:50vh;overflow:auto;padding:6px}
+.pal .res div{padding:8px 12px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between}
+.pal .res div.sel{background:var(--panel2)}
+.pal kbd,kbd{font:11px ui-monospace,monospace;background:var(--bg2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--muted)}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:9px 16px;border-radius:99px;z-index:80;display:none;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.badge{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;border:1px solid var(--line)}
+.badge.ok{color:var(--ok)}.badge.bad{color:var(--bad)}
+@media(max-width:1000px){.work{grid-template-columns:0 0 1fr 5px 320px}.left,.rz1{display:none}}
 </style>
 </head>
 <body>
-<header>
-  <h1>CINVAR</h1><span>your models. your vision. your studio.</span>
-  <span id="proj-label" class="muted" style="margin-left:auto"></span>
-</header>
-<main>
-  <section>
-    <h2>Project</h2>
-    <div class="row"><input id="proj-name" placeholder="New project name"><button onclick="createProject()">Create</button></div>
-    <div class="row"><input id="proj-dir" placeholder="/path/to/existing/project"><button onclick="openProject()">Open</button></div>
-    <div id="proj-info" class="muted">no project open</div>
-    <h2 style="margin-top:16px">Assets</h2>
-    <ul id="assets"><li class="muted">none</li></ul>
-    <h2 style="margin-top:16px">Renders</h2>
-    <ul id="renders"><li class="muted">none</li></ul>
-  </section>
-
-  <section id="chat">
-    <h2>Studio</h2>
-    <div id="log"><div class="msg tool">Describe what you want. Example: "Take the clips in ./footage and make a 30 second cinematic teaser with a title."</div></div>
-    <textarea id="prompt" placeholder="Make me a vertical short with captions..."></textarea>
-    <div class="row" style="margin-top:8px">
-      <button class="primary" onclick="send()">Send</button>
-      <button onclick="render(false)">Export</button>
-      <button onclick="render(true)">Preview</button>
+<div class="app">
+  <div class="top">
+    <div class="brand">
+      <svg viewBox="0 0 256 256"><rect width="256" height="256" rx="56" fill="#111827"/><path d="M168 76a64 64 0 1 0 0 104" fill="none" stroke="var(--accent)" stroke-width="28" stroke-linecap="round"/><path d="M120 108l52 20-52 20z" fill="#f8fafc"/></svg>
+      CINVAR
     </div>
-    <div id="progress" class="muted"></div>
-  </section>
+    <div class="sep"></div>
+    <button class="ghost projbtn" id="projBtn" title="Switch or create a project"><b id="projName">No project</b><span class="muted">▾</span></button>
+    <div class="spacer"></div>
+    <div class="pbar" id="pbar"><i id="pfill"></i></div>
+    <span id="pmsg" style="color:var(--muted);font-size:12px"></span>
+    <select id="modelSel" title="AI model"></select>
+    <button id="btnPrev" title="Fast low-res preview (Ctrl+P)">▶ Preview</button>
+    <button class="primary" id="btnExp" title="Full quality export (Ctrl+E)">⬇ Export</button>
+    <button class="ghost" id="btnPal" title="Command palette (Ctrl+K)">⌘K</button>
+    <button class="ghost" id="btnSet" title="Settings">⚙</button>
+  </div>
 
-  <section>
-    <h2>Timeline</h2>
-    <div id="timeline" class="muted">no timeline</div>
-    <h2 style="margin-top:16px">Preview</h2>
-    <video id="player" controls></video>
-    <h2 style="margin-top:16px">Skills</h2>
-    <ul id="skills"><li class="muted">loading...</li></ul>
-    <h2 style="margin-top:16px">Models</h2>
-    <div id="models" class="muted">loading...</div>
-  </section>
-</main>
+  <div class="work" id="work">
+    <div class="panel left">
+      <div class="tabs"><button class="tab on" data-g="L" data-t="media">Media</button><button class="tab" data-g="L" data-t="skills">Skills</button></div>
+      <div class="body" id="L-media">
+        <div class="drop" id="drop">Drop video, audio or images here<br><button id="pick">Choose files…</button><input type="file" id="file" multiple hidden accept="video/*,audio/*,image/*"></div>
+        <div class="bin" id="bin"></div>
+      </div>
+      <div class="body" id="L-skills" hidden><div class="list" id="skills"></div></div>
+    </div>
+    <div class="rz rz1" id="rz1"></div>
+
+    <div class="center">
+      <div class="stage">
+        <div class="screen"><video id="player" controls preload="metadata"></video>
+          <div class="ph" id="ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5l5 2.5-5 2.5z" fill="currentColor"/></svg><div>Pick a clip, or hit Preview to watch your edit</div></div></div>
+        <div class="statline"><span id="nowPlaying">—</span><span class="spacer"></span><span id="projStat"></span></div>
+      </div>
+      <div class="rzh" id="rzh"></div>
+      <div class="tl">
+        <div class="tlbar"><b>Timeline</b><span id="tlName" class="muted"></span><span class="spacer"></span><span class="muted">Zoom</span><input type="range" id="zoom" min="10" max="240" value="60"><button class="ghost" id="fit">Fit</button></div>
+        <div class="tlscroll" id="tlscroll"><div class="tlin" id="tlin"></div></div>
+      </div>
+    </div>
+
+    <div class="rz rz2" id="rz2"></div>
+    <div class="panel right">
+      <div class="tabs"><button class="tab on" data-g="R" data-t="chat">Assistant</button><button class="tab" data-g="R" data-t="insp">Inspector</button><button class="tab" data-g="R" data-t="out">Exports</button></div>
+      <div id="R-chat" class="chat">
+        <div class="log" id="log"></div>
+        <div class="sugg" id="sugg"></div>
+        <div class="composer">
+          <textarea id="prompt" placeholder="Tell the editor what to make…  (Enter to send, Shift+Enter for a new line)"></textarea>
+          <div class="row"><button class="primary" id="send">Send</button><button id="clear" class="ghost">Clear chat</button><span class="spacer"></span><span class="muted" id="modelNote"></span></div>
+        </div>
+      </div>
+      <div class="body" id="R-insp" hidden></div>
+      <div class="body" id="R-out" hidden><div class="list" id="renders"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- project modal -->
+<div class="modal" id="mProj"><div class="card"><header>Project<span class="spacer"></span><button class="ghost" data-close>✕</button></header><div class="in">
+  <h3>New project</h3>
+  <div class="field"><label>Name</label><input id="npName" placeholder="My video"></div>
+  <div class="field"><label>Save in folder</label><input id="npDir" placeholder="(default: your CINVAR Projects folder)"></div>
+  <div style="text-align:right;margin-bottom:18px"><button class="primary" id="npGo">Create project</button></div>
+  <h3>Open existing</h3>
+  <div class="field"><label>Project folder</label><input id="opDir" placeholder="/path/to/project"></div>
+  <div style="text-align:right"><button id="opGo">Open</button></div>
+</div></div></div>
+
+<!-- settings modal -->
+<div class="modal" id="mSet"><div class="card"><header>Settings<span class="spacer"></span><button class="ghost" data-close>✕</button></header><div class="in">
+  <h3>Appearance</h3>
+  <div class="field"><label>Theme</label><div class="themes" id="themes"></div></div>
+  <div class="field"><label>Accent colour</label><div class="sw" id="swatches"></div></div>
+  <div class="field"><label>Custom accent</label><input type="color" id="accentPick"></div>
+  <div class="field"><label>Text size <span id="fsv" class="muted"></span></label><input type="range" id="fs" min="11" max="17"></div>
+  <div class="field"><label>Corner roundness</label><input type="range" id="rad" min="0" max="20"></div>
+  <div class="field"><label>Density</label><select id="dens"><option value="8">Compact</option><option value="10">Comfortable</option><option value="14">Spacious</option></select></div>
+  <h3>Layout</h3>
+  <div class="field"><label>Media panel</label><input type="checkbox" id="showL"></div>
+  <div class="field"><label>Assistant panel</label><input type="checkbox" id="showR"></div>
+  <div class="field"><label>Timeline height</label><input type="range" id="tlh" min="140" max="560"></div>
+  <h3>Assistant</h3>
+  <div class="field"><label>Send with</label><select id="sendKey"><option value="enter">Enter</option><option value="mod">Ctrl/⌘ + Enter</option></select></div>
+  <div class="field"><label>Show tool calls</label><input type="checkbox" id="showTools"></div>
+  <div class="field"><label>Auto-play new renders</label><input type="checkbox" id="autoplay"></div>
+  <h3>System check</h3>
+  <div id="doctor" class="muted">checking…</div>
+  <div style="margin-top:14px;text-align:right"><button id="resetPrefs">Reset appearance</button></div>
+</div></div></div>
+
+<!-- command palette -->
+<div class="pal" id="pal"><input id="palIn" placeholder="Type a command…" style="border:none;border-bottom:1px solid var(--line);border-radius:14px 14px 0 0;padding:14px"><div class="res" id="palRes"></div></div>
+<div class="toast" id="toast"></div>
+
 <script>
-const el = (id) => document.getElementById(id);
-let currentRender = null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let S={open:false}, sel={asset:null,clip:null}, curJob=null, busy=false, pxs=60;
 
-function addLog(kind, text) {
-  const div = document.createElement('div');
-  div.className = 'msg ' + kind;
-  div.textContent = text;
-  el('log').appendChild(div);
-  el('log').scrollTop = el('log').scrollHeight;
+/* ---------- preferences (stored only in this browser) ---------- */
+const DEF={theme:'midnight',accent:'#38bdf8',fs:13,rad:10,pad:10,showL:true,showR:true,tlh:260,left:290,right:380,sendKey:'enter',showTools:true,autoplay:true};
+let P={...DEF};
+try{P={...DEF,...JSON.parse(localStorage.getItem('cinvar.prefs')||'{}')}}catch{}
+const savePrefs=()=>{try{localStorage.setItem('cinvar.prefs',JSON.stringify(P))}catch{}};
+function inkFor(hex){const n=parseInt(hex.slice(1),16),r=n>>16,g=n>>8&255,b=n&255;return(r*299+g*587+b*114)/1000>150?'#06111a':'#ffffff'}
+function applyPrefs(){
+  const r=document.documentElement;
+  r.dataset.theme=P.theme;
+  r.style.setProperty('--accent',P.accent);r.style.setProperty('--accent-ink',inkFor(P.accent));
+  r.style.setProperty('--fs',P.fs+'px');r.style.setProperty('--radius',P.rad+'px');r.style.setProperty('--pad',P.pad+'px');
+  r.style.setProperty('--tl-h',P.tlh+'px');r.style.setProperty('--left',P.left+'px');r.style.setProperty('--right',P.right+'px');
+  $('work').classList.toggle('noleft',!P.showL);$('work').classList.toggle('noright',!P.showR);
 }
-
-async function api(path, method, body) {
-  const res = await fetch(path, {
-    method: method || 'GET',
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  return res.json();
+const THEMES=[['midnight','Midnight'],['graphite','Graphite'],['ember','Ember'],['forest','Forest'],['light','Light']];
+const ACCENTS=['#38bdf8','#818cf8','#a78bfa','#f472b6','#fb7185','#fb923c','#fbbf24','#34d399','#2dd4bf'];
+function buildSettings(){
+  $('themes').innerHTML=THEMES.map(([k,n])=>`<button data-th="${k}" class="${P.theme===k?'on':''}">${n}</button>`).join('');
+  $('swatches').innerHTML=ACCENTS.map(c=>`<i data-ac="${c}" style="background:${c}" class="${P.accent===c?'on':''}"></i>`).join('');
+  $('accentPick').value=P.accent;$('fs').value=P.fs;$('fsv').textContent=P.fs+'px';$('rad').value=P.rad;$('dens').value=P.pad;
+  $('showL').checked=P.showL;$('showR').checked=P.showR;$('tlh').value=P.tlh;$('sendKey').value=P.sendKey;$('showTools').checked=P.showTools;$('autoplay').checked=P.autoplay;
 }
+$('themes').onclick=e=>{const k=e.target.dataset.th;if(k){P.theme=k;savePrefs();applyPrefs();buildSettings()}};
+$('swatches').onclick=e=>{const c=e.target.dataset.ac;if(c){P.accent=c;savePrefs();applyPrefs();buildSettings()}};
+$('accentPick').oninput=e=>{P.accent=e.target.value;savePrefs();applyPrefs()};
+for(const [id,key,num] of [['fs','fs',1],['rad','rad',1],['dens','pad',1],['tlh','tlh',1]])$(id).oninput=e=>{P[key]=+e.target.value;$('fsv').textContent=P.fs+'px';savePrefs();applyPrefs()};
+for(const [id,key] of [['showL','showL'],['showR','showR'],['showTools','showTools'],['autoplay','autoplay']])$(id).onchange=e=>{P[key]=e.target.checked;savePrefs();applyPrefs()};
+$('sendKey').onchange=e=>{P.sendKey=e.target.value;savePrefs()};
+$('resetPrefs').onclick=()=>{P={...DEF};savePrefs();applyPrefs();buildSettings()};
 
-async function refresh() {
-  const s = await api('/api/status');
-  if (s.open) {
-    el('proj-label').textContent = s.name + '  ·  ' + s.path;
-    el('proj-info').textContent = 'revision ' + s.revision + ' · ' + (s.issues.length ? s.issues.length + ' issue(s)' : 'no structural issues');
-    el('assets').innerHTML = (s.assets || []).map(a =>
-      '<li>' + a.name + ' <span class="muted">' + (a.seconds ? a.seconds.toFixed(1) + 's' : '') + (a.missing ? ' · missing' : '') + '</span></li>').join('') || '<li class="muted">none</li>';
-    el('timeline').innerHTML = (s.timelines || []).map(t =>
-      '<div>' + t.name + ' · ' + t.duration.toFixed(2) + 's · ' + t.width + 'x' + t.height + ' · ' + t.clips + ' clips</div>').join('') || '<span class="muted">no timeline</span>';
-    el('renders').innerHTML = (s.renders || []).map(r => '<li><a href="#" onclick="play(\'' + r + '\')">' + r + '</a></li>').join('') || '<li class="muted">none</li>';
-  } else {
-    el('proj-info').textContent = 'no project open';
+/* ---------- helpers ---------- */
+async function api(path,method,body){
+  const r=await fetch(path,{method:method||'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+  let j;try{j=await r.json()}catch{j={error:'bad response'}}return j;
+}
+function toast(m,ms=2600){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',ms)}
+const nice=n=>String(n).replace(/^[0-9a-f]{8}-/,'');
+const fmt=s=>{s=+s||0;const m=Math.floor(s/60);return m+':'+(s%60).toFixed(1).padStart(4,'0')}
+const open_=id=>$(id).classList.add('on'),close_=id=>$(id).classList.remove('on');
+document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>b.closest('.modal').classList.remove('on'));
+document.querySelectorAll('.modal').forEach(m=>m.addEventListener('mousedown',e=>{if(e.target===m)m.classList.remove('on')}));
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  const g=t.dataset.g;document.querySelectorAll(`.tab[data-g=${g}]`).forEach(x=>x.classList.toggle('on',x===t));
+  document.querySelectorAll(`[id^="${g}-"]`).forEach(p=>p.hidden=p.id!==`${g}-${t.dataset.t}`);
+});
+function showTab(g,t){document.querySelector(`.tab[data-g=${g}][data-t=${t}]`).click()}
+
+/* ---------- state ---------- */
+async function refresh(){
+  const s=await api('/api/status');S=s;
+  $('projName').textContent=s.open?s.name:'No project';
+  if(!s.open){$('bin').innerHTML='<div class="empty">Open or create a project to begin.</div>';$('tlin').innerHTML='';$('projStat').textContent='';return}
+  const tl=(s.timelines||[])[0];
+  $('projStat').textContent=`rev ${s.revision}${tl?` · ${tl.width}×${tl.height} · ${fmt(tl.duration)} · ${tl.clips} clips`:''}${s.issues.length?` · ${s.issues.length} issue(s)`:''}`;
+  drawBin();drawTimeline();drawRenders();drawInspector();
+}
+function drawBin(){
+  const a=S.assets||[];
+  $('bin').innerHTML=a.length?a.map(x=>`<div class="asset k-${x.kind} ${sel.asset===x.id?'on':''}" data-id="${x.id}" title="${esc(nice(x.name))}">
+    <button class="add" data-add="${x.id}" title="Ask the assistant to add this to the timeline">＋</button>
+    <div class="ico">${x.kind==='audio'?'♪':x.kind==='image'?'▣':'▶'}</div><div class="nm">${esc(nice(x.name))}</div>
+    <div class="mt">${x.kind}${x.seconds?' · '+fmt(x.seconds):''}${x.missing?' · <span style="color:var(--bad)">missing</span>':''}</div></div>`).join(''):'<div class="empty">No media yet.<br>Drag files in, or ask the assistant to import a folder.</div>';
+}
+$('bin').onclick=e=>{
+  const add=e.target.closest('[data-add]');
+  if(add){const a=S.assets.find(x=>x.id===add.dataset.add);$('prompt').value=`Add "${a.name}" to the timeline.`;$('prompt').focus();return}
+  const c=e.target.closest('.asset');if(!c)return;sel.asset=c.dataset.id;const a=S.assets.find(x=>x.id===sel.asset);drawBin();
+  if(a&&a.kind!=='image'){playFile(a.name,'asset')}
+  showInspectorAsset(a);
+};
+const KCOL={video:'var(--v)',audio:'var(--a)',caption:'var(--c)',overlay:'var(--o)'};
+function drawTimeline(){
+  const tl=(S.timelines||[])[0];
+  if(!tl){$('tlin').innerHTML='<div class="empty">The timeline is empty. Ask the assistant to build something.</div>';$('tlName').textContent='';return}
+  $('tlName').textContent=tl.name;
+  const W=Math.max(tl.duration+4,10)*pxs+120;
+  let h=`<div class="ruler" style="width:${W}px">`;
+  const step=pxs>=120?1:pxs>=50?5:pxs>=25?10:30;
+  for(let t=0;t<=tl.duration+4;t+=step)h+=`<i style="left:${96+t*pxs}px"></i><span style="left:${96+t*pxs}px">${fmt(t).replace(/\.0$/,'')}</span>`;
+  h+='</div>';
+  for(const tr of tl.tracks||[]){
+    h+=`<div class="trk" style="width:${W}px"><div class="lab"><span style="width:8px;height:8px;border-radius:50%;background:${KCOL[tr.kind]||'#888'}"></span>${esc(tr.name||tr.kind)}${tr.muted?' 🔇':''}</div>`;
+    for(const c of tr.clips)h+=`<div class="clip kv-${tr.kind} ${sel.clip===c.id?'on':''}" data-clip="${c.id}" style="left:${96+c.start*pxs}px;width:${Math.max(c.duration*pxs,6)}px" title="${esc(c.name)}">${esc(c.name||'clip')}<small>${fmt(c.duration)}${c.speed!==1?' · '+c.speed+'×':''}${c.effects?' · fx '+c.effects:''}</small></div>`;
+    h+='</div>';
   }
+  h+='<div class="playhead" id="ph2"></div>';
+  $('tlin').style.width=W+'px';$('tlin').innerHTML=h;
 }
+$('tlin').onclick=e=>{const c=e.target.closest('.clip');if(!c)return;sel.clip=c.dataset.clip;drawTimeline();showInspectorClip();showTab('R','insp')};
+$('zoom').oninput=e=>{pxs=+e.target.value;drawTimeline()};
+$('fit').onclick=()=>{const tl=(S.timelines||[])[0];if(!tl)return;pxs=Math.max(10,Math.min(240,($('tlscroll').clientWidth-140)/Math.max(tl.duration,1)));$('zoom').value=pxs;drawTimeline()};
+function drawRenders(){
+  const r=S.renders||[];
+  $('renders').innerHTML=r.length?r.map(x=>`<div class="it" data-r="${esc(x)}"><span>🎬 ${esc(x)}</span><button class="ghost" data-dl="${esc(x)}">Save</button></div>`).join(''):'<div class="empty">No exports yet. Hit Preview or Export.</div>';
+}
+$('renders').onclick=e=>{
+  const d=e.target.closest('[data-dl]');if(d){const a=document.createElement('a');a.href='/api/media/'+encodeURIComponent(d.dataset.dl);a.download=d.dataset.dl;a.click();return}
+  const it=e.target.closest('[data-r]');if(it)playFile(it.dataset.r,'render');
+};
+function drawInspector(){if(sel.clip)showInspectorClip();else if(sel.asset)showInspectorAsset((S.assets||[]).find(a=>a.id===sel.asset))}
+function showInspectorAsset(a){
+  if(!a)return;
+  $('R-insp').innerHTML=`<h3>Asset</h3><dl class="kv"><dt>Name</dt><dd>${esc(nice(a.name))}</dd><dt>Type</dt><dd>${a.kind}</dd><dt>Duration</dt><dd>${a.seconds?fmt(a.seconds):'—'}</dd><dt>Status</dt><dd>${a.missing?'<span class="badge bad">file missing</span>':'<span class="badge ok">ok</span>'}</dd></dl>
+  <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap"><button data-q="Add &quot;${esc(a.name)}&quot; to the timeline.">Add to timeline</button><button data-q="Transcribe &quot;${esc(a.name)}&quot; and add captions.">Add captions</button><button data-q="Describe &quot;${esc(a.name)}&quot; and suggest the best moments.">Find best moments</button></div>`;
+}
+function showInspectorClip(){
+  const tl=(S.timelines||[])[0];let c,tk;
+  for(const t of tl?.tracks||[])for(const x of t.clips)if(x.id===sel.clip){c=x;tk=t}
+  if(!c){$('R-insp').innerHTML='<div class="empty">Select a clip on the timeline.</div>';return}
+  $('R-insp').innerHTML=`<h3>Clip</h3><dl class="kv"><dt>Name</dt><dd>${esc(c.name)}</dd><dt>Track</dt><dd>${esc(tk.name)} (${tk.kind})</dd><dt>Start</dt><dd>${fmt(c.start)}</dd><dt>Duration</dt><dd>${fmt(c.duration)}</dd><dt>Speed</dt><dd>${c.speed}×</dd><dt>Effects</dt><dd>${c.effects}</dd><dt>ID</dt><dd style="font-family:ui-monospace,monospace;font-size:11px">${esc(c.id)}</dd></dl>
+  <h3>Quick actions</h3><div style="display:flex;gap:6px;flex-wrap:wrap">
+  <button data-q="Trim clip ${c.id} by 1 second at the end.">Trim end</button><button data-q="Split clip ${c.id} in the middle.">Split</button><button data-q="Add a fade in and fade out to clip ${c.id}.">Fades</button><button data-q="Apply a cinematic colour grade to clip ${c.id}.">Colour grade</button><button data-q="Delete clip ${c.id}.">Delete</button></div>`;
+}
+$('R-insp').onclick=e=>{const q=e.target.dataset.q;if(q){showTab('R','chat');$('prompt').value=q;$('prompt').focus()}};
 
-async function createProject() {
-  const name = el('proj-name').value.trim() || 'Cinvar Project';
-  const res = await api('/api/project', 'POST', { name });
-  if (res.error) return addLog('tool', 'error: ' + res.error);
-  addLog('tool', 'created project at ' + res.path);
+/* ---------- player ---------- */
+function playFile(name,kind){
+  const v=$('player');v.src='/api/media/'+encodeURIComponent(name);$('ph').style.display='none';document.querySelector('.screen').classList.add('has');$('nowPlaying').textContent=(kind==='render'?'Render · ':'Source · ')+nice(name);
+  v.play().catch(()=>{});
+}
+$('player').addEventListener('error',()=>{$('ph').style.display='block';document.querySelector('.screen').classList.remove('has')});
+$('player').addEventListener('timeupdate',()=>{});
+
+/* ---------- upload ---------- */
+async function upload(files){
+  if(!S.open){toast('Create or open a project first');open_('mProj');return}
+  for(const f of files){
+    toast('Importing '+f.name+'…',60000);
+    try{
+      const r=await fetch('/api/upload?name='+encodeURIComponent(f.name),{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});
+      const j=await r.json();toast(j.error?('✗ '+j.error):('✓ Imported '+f.name))
+    }catch(e){toast('✗ upload failed')}
+  }
   refresh();
 }
+const drop=$('drop');
+['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over')}));
+['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();if(ev==='drop'||e.target===document.documentElement)drop.classList.remove('over')}));
+document.addEventListener('drop',e=>{if(e.dataTransfer?.files?.length)upload([...e.dataTransfer.files])});
+$('pick').onclick=()=>$('file').click();$('file').onchange=e=>{upload([...e.target.files]);e.target.value=''};
 
-async function openProject() {
-  const dir = el('proj-dir').value.trim();
-  const res = await api('/api/open', 'POST', { dir });
-  if (res.error) return addLog('tool', 'error: ' + res.error);
-  addLog('tool', 'opened ' + res.path);
+/* ---------- chat ---------- */
+const SUGG=['Build a 30 second cinematic teaser from my clips','Add captions to everything','Cut the dead air and tighten the pacing','Make a vertical 9:16 version for Shorts','Add a title card and background music'];
+function logMsg(kind,text,calls){
+  const d=document.createElement('div');d.className='msg '+kind;d.textContent=text;
+  if(calls&&calls.length&&P.showTools){const c=document.createElement('div');c.className='chips';c.innerHTML=calls.map(t=>`<span class="chip ${t.ok?'ok':'bad'}" title="${esc(t.error||'')}">${t.ok?'✓':'✗'} ${esc(t.name.replace('cinvar.',''))}</span>`).join('');d.appendChild(c)}
+  $('log').appendChild(d);$('log').scrollTop=1e9;return d;
+}
+function intro(){$('log').innerHTML='';logMsg('sys','Describe what you want. I edit the real project — nothing leaves your machine except calls to the model you choose.');$('sugg').innerHTML=SUGG.map(s=>`<button>${esc(s)}</button>`).join('')}
+$('sugg').onclick=e=>{if(e.target.tagName==='BUTTON'){$('prompt').value=e.target.textContent;send()}};
+$('clear').onclick=intro;
+async function send(){
+  const m=$('prompt').value.trim();if(!m||busy)return;
+  if(!S.open){toast('Create or open a project first');open_('mProj');return}
+  $('prompt').value='';$('sugg').innerHTML='';logMsg('user',m);
+  const w=logMsg('assistant','');w.innerHTML='<span class="dots"><span></span><span></span><span></span></span>';
+  busy=true;$('send').disabled=true;
+  const res=await api('/api/chat','POST',{message:m});
+  w.remove();busy=false;$('send').disabled=false;
+  if(res.error){logMsg('sys','⚠ '+res.error+(/model|key|provider/i.test(res.error)?'\n(Open ⚙ Settings or run `cinvar setup` to configure a model.)':''));return}
+  logMsg('assistant',res.text||'(done)',res.tool_calls);
   refresh();
 }
+$('send').onclick=send;
+$('prompt').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){const mod=e.ctrlKey||e.metaKey;if(P.sendKey==='enter'?(!e.shiftKey):mod){e.preventDefault();send()}}
+});
 
-async function send() {
-  const message = el('prompt').value.trim();
-  if (!message) return;
-  el('prompt').value = '';
-  addLog('user', message);
-  addLog('tool', 'thinking...');
-  const res = await api('/api/chat', 'POST', { message });
-  if (res.error) { addLog('tool', 'error: ' + res.error); return; }
-  addLog('assistant', res.text || '(no text returned)');
-  if (res.tool_calls && res.tool_calls.length) {
-    addLog('tool', res.tool_calls.map(t => (t.ok ? 'ok ' : 'failed ') + t.name).join(' · '));
-  }
-  refresh();
+/* ---------- render ---------- */
+async function render(preview){
+  if(!S.open)return toast('No project open');
+  const r=await api('/api/render','POST',{preview});
+  if(r.error)return toast('✗ '+r.error,5000);
+  curJob=r.job_id;$('pbar').style.display='block';poll();
 }
-
-async function render(preview) {
-  const res = await api('/api/render', 'POST', { preview });
-  if (res.error) return addLog('tool', 'error: ' + res.error);
-  currentRender = res.job_id;
-  addLog('tool', 'render started: ' + res.output);
-  poll();
+async function poll(){
+  if(!curJob)return;const j=await api('/api/jobs/'+curJob);if(!j)return;
+  const pct=Math.round((j.progress||0)*100);$('pfill').style.width=pct+'%';$('pmsg').textContent=`${j.status} ${pct}%`;
+  if(j.status==='running'||j.status==='queued')return setTimeout(poll,600);
+  $('pbar').style.display='none';
+  if(j.status==='succeeded'){$('pmsg').textContent='';const out=j.output&&(j.output.output||j.output.file);toast('✓ Render complete');await refresh();if(out&&P.autoplay)playFile(out.split(/[\\/]/).pop(),'render')}
+  else{$('pmsg').textContent='';toast('✗ Render failed: '+((j.error&&j.error.message)||j.status),6000)}
 }
+$('btnPrev').onclick=()=>render(true);$('btnExp').onclick=()=>render(false);
 
-async function poll() {
-  if (!currentRender) return;
-  const job = await api('/api/jobs/' + currentRender);
-  if (!job) return;
-  el('progress').textContent = job.status + ' ' + Math.round((job.progress || 0) * 100) + '% ' + (job.message || '');
-  if (job.status === 'running' || job.status === 'queued') { setTimeout(poll, 700); return; }
-  if (job.status === 'succeeded') {
-    addLog('tool', 'render complete');
-    const out = job.output && (job.output.output || job.output.file);
-    if (out) play(out.split('/').pop());
-    refresh();
-  } else {
-    addLog('tool', 'render failed: ' + ((job.error && job.error.message) || job.status));
-  }
+/* ---------- projects / models / settings ---------- */
+$('projBtn').onclick=()=>open_('mProj');
+$('npGo').onclick=async()=>{
+  const body={name:$('npName').value.trim()||'Untitled'};const d=$('npDir').value.trim();if(d)body.dir=d;
+  const r=await api('/api/project','POST',body);if(r.error)return toast('✗ '+r.error,5000);
+  close_('mProj');toast('✓ Created '+r.name);sel={};refresh();
+};
+$('opGo').onclick=async()=>{
+  const r=await api('/api/open','POST',{dir:$('opDir').value.trim()});if(r.error)return toast('✗ '+r.error,5000);
+  close_('mProj');toast('✓ Opened '+r.name);sel={};refresh();
+};
+$('btnSet').onclick=()=>{buildSettings();open_('mSet');loadDoctor()};
+async function loadDoctor(){
+  const d=await api('/api/doctor');
+  const checks=d.checks||d.items||[];
+  $('doctor').innerHTML=Array.isArray(checks)&&checks.length?checks.map(c=>`<div>${c.ok||c.status==='ok'?'<span class="badge ok">ok</span>':'<span class="badge bad">'+esc(c.status||'issue')+'</span>'} ${esc(c.name||c.check)} <span class="muted">${esc(c.detail||c.message||'')}</span></div>`).join(''):`<pre style="white-space:pre-wrap;margin:0">${esc(JSON.stringify(d,null,1).slice(0,1500))}</pre>`;
 }
-
-async function play(name) {
-  el('player').src = '/api/media/' + encodeURIComponent(name);
+async function loadModels(){
+  const m=await api('/api/models');
+  $('modelSel').innerHTML=(m.models||[]).length?(m.models).map(x=>`<option ${x===m.active?'selected':''}>${esc(x)}</option>`).join(''):'<option value="">No model set up</option>';
+  $('modelNote').textContent=m.active?'':'⚠ run cinvar setup to add a model';
 }
-
-async function loadMeta() {
-  const skills = await api('/api/skills');
-  el('skills').innerHTML = (skills || []).map(s => '<li>' + s.name + ' <span class="muted">— ' + s.title + '</span></li>').join('') || '<li class="muted">none</li>';
-  const models = await api('/api/models');
-  el('models').textContent = models.active ? ('active: ' + models.active + ' — ' + (models.models || []).join(', ')) : 'no model configured';
+$('modelSel').onchange=async e=>{if(!e.target.value)return;const r=await api('/api/model','POST',{name:e.target.value});toast(r.error?('✗ '+r.error):('Model: '+r.active))};
+async function loadSkills(){
+  const s=await api('/api/skills');
+  $('skills').innerHTML=(s||[]).map(x=>`<div class="it" data-s="${esc(x.name)}" title="${esc(x.summary||'')}"><span><b>${esc(x.title||x.name)}</b><br><small class="muted">${esc(x.summary||'')}</small></span></div>`).join('')||'<div class="empty">No skills installed.</div>';
 }
+$('skills').onclick=e=>{const it=e.target.closest('[data-s]');if(it){showTab('R','chat');$('prompt').value=`Use the "${it.dataset.s}" skill on my project.`;$('prompt').focus()}};
 
-refresh(); loadMeta(); setInterval(refresh, 4000);
+/* ---------- resizers ---------- */
+function drag(el,fn){el.addEventListener('mousedown',e=>{e.preventDefault();const mv=ev=>fn(ev),up=()=>{removeEventListener('mousemove',mv);removeEventListener('mouseup',up);savePrefs()};addEventListener('mousemove',mv);addEventListener('mouseup',up)})}
+drag($('rz1'),e=>{P.left=Math.max(200,Math.min(520,e.clientX));applyPrefs()});
+drag($('rz2'),e=>{P.right=Math.max(280,Math.min(640,innerWidth-e.clientX));applyPrefs()});
+drag($('rzh'),e=>{P.tlh=Math.max(140,Math.min(innerHeight-260,innerHeight-e.clientY));applyPrefs()});
+
+/* ---------- command palette + shortcuts ---------- */
+const CMDS=[
+  ['Preview render','Ctrl+P',()=>render(true)],['Export video','Ctrl+E',()=>render(false)],
+  ['New / open project','',()=>open_('mProj')],['Settings','',()=>$('btnSet').click()],
+  ['Focus assistant','/',()=>{showTab('R','chat');$('prompt').focus()}],['Show exports','',()=>showTab('R','out')],['Show inspector','',()=>showTab('R','insp')],
+  ['Toggle media panel','',()=>{P.showL=!P.showL;savePrefs();applyPrefs()}],['Toggle assistant panel','',()=>{P.showR=!P.showR;savePrefs();applyPrefs()}],
+  ['Fit timeline to window','',()=>$('fit').click()],['Import files…','',()=>$('file').click()],
+  ...THEMES.map(([k,n])=>['Theme: '+n,'',()=>{P.theme=k;savePrefs();applyPrefs()}]),
+];
+let palSel=0,palList=[];
+function palDraw(){const q=$('palIn').value.toLowerCase();palList=CMDS.filter(c=>c[0].toLowerCase().includes(q));palSel=Math.min(palSel,Math.max(0,palList.length-1));
+  $('palRes').innerHTML=palList.map((c,i)=>`<div class="${i===palSel?'sel':''}" data-i="${i}"><span>${esc(c[0])}</span><kbd>${esc(c[1])}</kbd></div>`).join('')}
+function palRun(i){const c=palList[i];$('pal').classList.remove('on');if(c)c[2]()}
+$('btnPal').onclick=()=>{$('pal').classList.add('on');$('palIn').value='';palSel=0;palDraw();$('palIn').focus()};
+$('palIn').oninput=()=>{palSel=0;palDraw()};
+$('palIn').onkeydown=e=>{if(e.key==='ArrowDown'){palSel=Math.min(palSel+1,palList.length-1);palDraw()}else if(e.key==='ArrowUp'){palSel=Math.max(palSel-1,0);palDraw()}else if(e.key==='Enter')palRun(palSel);else if(e.key==='Escape')$('pal').classList.remove('on')};
+$('palRes').onclick=e=>{const d=e.target.closest('[data-i]');if(d)palRun(+d.dataset.i)};
+document.addEventListener('mousedown',e=>{if(!e.target.closest('#pal')&&!e.target.closest('#btnPal'))$('pal').classList.remove('on')});
+addEventListener('keydown',e=>{
+  const mod=e.ctrlKey||e.metaKey,typing=/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+  if(mod&&e.key==='k'){e.preventDefault();$('btnPal').click()}
+  else if(mod&&e.key==='p'){e.preventDefault();render(true)}
+  else if(mod&&e.key==='e'){e.preventDefault();render(false)}
+  else if(e.key==='/'&&!typing){e.preventDefault();showTab('R','chat');$('prompt').focus()}
+  else if(e.key===' '&&!typing){e.preventDefault();const v=$('player');v.paused?v.play():v.pause()}
+  else if(e.key==='Escape')document.querySelectorAll('.modal.on').forEach(m=>m.classList.remove('on'));
+});
+
+/* ---------- boot ---------- */
+applyPrefs();intro();
+refresh().then(()=>{if(!S.open)open_('mProj')});loadModels();loadSkills();
+setInterval(()=>{if(!busy&&!document.hidden)refresh()},5000);
 </script>
 </body>
 </html>

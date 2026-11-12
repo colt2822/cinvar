@@ -12,6 +12,7 @@ cargo build --release --locked
 cp target/release/cinvar "$OUT/"
 cp LICENSE README.md INSTALLATION.md SECURITY.md CHANGELOG.md ROADMAP.md CONTRIBUTING.md NOTICE THIRD_PARTY_NOTICES.md "$OUT/" 2>/dev/null || true
 cp -r plugins "$OUT/" 2>/dev/null || true
+mkdir -p "$OUT/packaging" && cp -r packaging/linux "$OUT/packaging/" 2>/dev/null || true
 cp docs/*.md "$OUT/docs/" 2>/dev/null || true
 cp examples/*.sh examples/*.py "$OUT/examples/" 2>/dev/null || true
 # Third-party crate licence inventory (identifiers only; full texts live in each crate).

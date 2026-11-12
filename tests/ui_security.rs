@@ -104,3 +104,69 @@ fn rebinding_csrf_and_simple_posts_are_refused() {
         403
     );
 }
+
+#[test]
+fn upload_endpoint_is_same_origin_only_and_octet_stream_only() {
+    let ui = start();
+    let p = ui.1;
+    let host = format!("127.0.0.1:{p}");
+    let origin = format!("http://127.0.0.1:{p}");
+    // Foreign origin: refused before any bytes are read.
+    assert_eq!(
+        http(
+            p,
+            "POST",
+            "/api/upload?name=a.mp4",
+            &[
+                ("Host", &host),
+                ("Origin", "http://evil.example"),
+                ("Content-Type", "application/octet-stream")
+            ],
+            "x"
+        ),
+        403
+    );
+    // A browser form post (no preflight) cannot use this endpoint.
+    assert_eq!(
+        http(
+            p,
+            "POST",
+            "/api/upload?name=a.mp4",
+            &[
+                ("Host", &host),
+                ("Origin", &origin),
+                ("Content-Type", "text/plain")
+            ],
+            "x"
+        ),
+        403
+    );
+    // The octet-stream exemption does not extend to other routes.
+    assert_eq!(
+        http(
+            p,
+            "POST",
+            "/api/chat",
+            &[
+                ("Host", &host),
+                ("Origin", &origin),
+                ("Content-Type", "application/octet-stream")
+            ],
+            "{}"
+        ),
+        403
+    );
+    // Same-origin upload with no project open is a clean error, not a crash.
+    let code = http(
+        p,
+        "POST",
+        "/api/upload?name=a.mp4",
+        &[
+            ("Host", &host),
+            ("Origin", &origin),
+            ("Content-Type", "application/octet-stream"),
+        ],
+        "x",
+    );
+    assert!(code == 404 || code == 400 || code == 500, "got {code}");
+}
