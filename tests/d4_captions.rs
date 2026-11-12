@@ -141,7 +141,13 @@ fn burned_captions_wrap_inside_the_frame_and_use_a_background_box() {
     req.width = Some(360);
     req.height = Some(640);
     let outcome = render::render(&project, &store, &req, &|_, _| {}, &|| false).expect("render");
-    assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+    // Ignore the expected notice from hosts that list a hardware encoder they cannot use (CI runners).
+    let unexpected: Vec<_> = outcome
+        .warnings
+        .iter()
+        .filter(|w| !w.contains("probe encode failed"))
+        .collect();
+    assert!(unexpected.is_empty(), "{:?}", unexpected);
     let frame = gray(&out, 1.0, 360, 640);
     // Rows containing dark pixels = the caption box.
     let dark_rows: Vec<usize> = (0..640)

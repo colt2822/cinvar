@@ -125,10 +125,17 @@ fn render_rig(r: &Rig, name: &str) -> PathBuf {
     req.crf = Some(14);
     let outcome =
         render::render(&r.project, &r.store, &req, &|_, _| {}, &|| false).expect("render succeeds");
+    // A host whose FFmpeg lists a hardware encoder it cannot actually use (CI runners) is told so
+    // by a warning; that environment notice is expected, anything else is not.
+    let unexpected: Vec<_> = outcome
+        .warnings
+        .iter()
+        .filter(|w| !w.contains("probe encode failed"))
+        .collect();
     assert!(
-        outcome.warnings.is_empty(),
+        unexpected.is_empty(),
         "no silent fallbacks: {:?}",
-        outcome.warnings
+        unexpected
     );
     out
 }

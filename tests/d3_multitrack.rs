@@ -161,7 +161,13 @@ fn four_layers_composite_in_z_order_with_timing() {
     req.height = Some(H as u32);
     req.crf = Some(14);
     let outcome = render::render(&project, &store, &req, &|_, _| {}, &|| false).expect("render");
-    assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+    // Ignore the expected notice from hosts that list a hardware encoder they cannot use (CI runners).
+    let unexpected: Vec<_> = outcome
+        .warnings
+        .iter()
+        .filter(|w| !w.contains("probe encode failed"))
+        .collect();
+    assert!(unexpected.is_empty(), "{:?}", unexpected);
 
     // t=0.5: only the base is visible.
     near(
@@ -265,7 +271,13 @@ fn animated_pip_moves_across_the_base_without_blanking_it() {
     req.height = Some(H as u32);
     req.crf = Some(14);
     let outcome = render::render(&project, &store, &req, &|_, _| {}, &|| false).expect("render");
-    assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+    // Ignore the expected notice from hosts that list a hardware encoder they cannot use (CI runners).
+    let unexpected: Vec<_> = outcome
+        .warnings
+        .iter()
+        .filter(|w| !w.contains("probe encode failed"))
+        .collect();
+    assert!(unexpected.is_empty(), "{:?}", unexpected);
     // t=0.2 the PiP is near x=80 (centre 320-240+...); the right side is untouched base.
     near(
         rgb_at(&out, 0.2, 560, 180),

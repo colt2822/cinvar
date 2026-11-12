@@ -1447,7 +1447,13 @@ mod tests {
         assert_eq!(escape_text("a:b,c"), "a\\:b\\,c");
         assert_eq!(escape_text("it's"), "it'\\\\\\''s");
         // ...and ffmpeg really accepts it (an apostrophe used to break the whole render).
-        if crate::util::proc::which("ffmpeg").is_some() {
+        let has_drawtext = crate::util::proc::which("ffmpeg").is_some()
+            && std::process::Command::new("ffmpeg")
+                .args(["-hide_banner", "-filters"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).contains(" drawtext "))
+                .unwrap_or(false);
+        if has_drawtext {
             let filter = format!(
                 "drawtext=text='{}':fontsize=20",
                 escape_text("it's: 50% [ok], \\yes;")

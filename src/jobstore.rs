@@ -102,10 +102,29 @@ pub fn process_alive(pid: u32) -> bool {
     {
         Path::new(&format!("/proc/{pid}")).exists()
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(all(unix, not(target_os = "linux")))]
     {
-        // Without a portable liveness probe, treat other processes as alive: we would rather
-        // leave a stale "running" record than mark live work as interrupted.
+        // macOS/BSD: no /proc. `kill -0` only checks that the process exists and is signalable.
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(true)
+    }
+    #[cfg(windows)]
+    {
+        // `tasklist` prints the PID when the process exists. On any failure assume alive: we would
+        // rather leave a stale "running" record than mark live work as interrupted.
+        std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains(&format!("\"{pid}\"")))
+            .unwrap_or(true)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
         let _ = pid;
         true
     }
