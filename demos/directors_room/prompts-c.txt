@@ -1,0 +1,9 @@
+I watched the trailer in this project and I have director's notes. Apply all of them to the existing timeline (do not start over), then export a new MP4:
+
+1. Drop the test-pattern shot - it looks like a broken file.
+2. The first shot must be 3 seconds or less, and every shot after it should be shorter than the one before, so the trailer builds instead of slowing down.
+3. Trim the fractal shot to the part where the picture is still changing.
+4. Make the title heavier and bigger, and let it hold alone on a calm frame for a beat before the fade. It still needs a better name than a file name - invent a good trailer title.
+5. Keep what already works: the music with its fades, and the push-in moves on the shots that remain.
+
+Tell me which revision I can roll back to, exactly what changed, and check frames around every cut and the title in the new render.

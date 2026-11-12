@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "cinvar": {
+      "command": "/path/to/cinvar/target/debug/cinvar",
+      "env": { "CINVAR_MEDIA_ROOTS": "/path/to/cinvar/demos/first_light/footage" },
+      "args": [
+        "mcp",
+        "serve",
+        "--project",
+        "/path/to/cinvar/demos/first_light/first-light"
+      ]
+    }
+  }
+}

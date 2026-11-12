@@ -1,0 +1,10 @@
+Revise the vertical short in this project (existing timeline, don't start over). My notes:
+
+1. Captions go in the lower third, not dead centre, and each caption must be a whole phrase - no dangling words like "LIGHT HAS A / BEGINNING".
+2. The end-card disc is cropped by the right edge: get it fully in frame.
+3. The call to action must look different from the spoken captions (a distinct style/treatment) so it reads as an ending.
+4. Shots should get shorter as it goes instead of four equal 3-4 second blocks.
+5. The pans are too subtle - make the motion clearly visible (more amount).
+6. Keep the voice-over, the music ducking under it, and the music fade-out.
+
+Say which revision I can roll back to, what changed, and check frames from the new render (captions start/middle/end, every cut, the end card).

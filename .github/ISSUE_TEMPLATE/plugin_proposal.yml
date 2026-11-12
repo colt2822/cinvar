@@ -1,0 +1,11 @@
+name: Plugin / integration proposal
+description: Propose or announce a plugin, adapter or integration
+labels: [plugin]
+body:
+  - type: textarea
+    id: what
+    attributes: { label: What does it add?, description: "Capability, tools, inputs/outputs." }
+    validations: { required: true }
+  - type: textarea
+    id: perms
+    attributes: { label: Permissions needed, description: "Subprocess, network, filesystem, cost, files sent off-device." }

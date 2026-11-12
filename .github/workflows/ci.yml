@@ -1,0 +1,106 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    # Linux is the verified platform and gates merges. macOS/Windows are best-effort until they
+    # have passed at least once: their failures are reported (red step) but do not block Linux.
+    continue-on-error: ${{ matrix.os != 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Install ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+      - name: Build
+        run: cargo build --verbose
+      - name: Unit and integration tests
+        run: cargo test --verbose
+      - name: Clippy (strict)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Format check
+        run: cargo fmt --all -- --check
+      - name: Doctor
+        run: cargo run -- doctor
+      - name: CLI smoke test - clone, run example, produce a video (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: ./examples/quickstart.sh
+      - name: Example plugin runs in the sandbox (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y bubblewrap
+          # Hosted runners may forbid user namespaces; report that instead of failing silently.
+          if bwrap --ro-bind / / true 2>/dev/null; then
+            python3 plugins/test_plugin.py plugins/project-stats target/debug/cinvar
+          else
+            echo "DEPENDENCY UNAVAILABLE: bubblewrap cannot create a sandbox on this runner (plugin sandbox NOT TESTED here)"
+          fi
+      - name: Release build + package (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: ./scripts/package.sh
+      - name: Release build (Windows)
+        if: runner.os == 'Windows'
+        run: cargo build --release --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cinvar-${{ runner.os }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+            target/release/cinvar.exe
+          if-no-files-found: ignore
+
+  audit:
+    name: dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
+
+  real-integrations:
+    name: real Blender / OTIO / OCIO (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg python3-venv
+      - name: Python helpers
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install opentimelineio==0.18.1 opencolorio
+      - name: Ignored (real-dependency) tests except Blender
+        env:
+          CINVAR_OTIO_PYTHON: ${{ github.workspace }}/.venv/bin/python
+          CINVAR_OCIO_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: cargo test --test otio_real --test color_ocio -- --ignored

@@ -1,0 +1,21 @@
+name: Bug report
+description: Something CINVAR does wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Security problem? Do **not** file it here - see SECURITY.md."
+  - type: input
+    id: version
+    attributes: { label: "`cinvar --version` and `cinvar doctor` summary", placeholder: "0.1.0, linux x86_64, ffmpeg 6.1" }
+    validations: { required: true }
+  - type: textarea
+    id: what
+    attributes: { label: What happened, description: "Exact command or MCP tool call, what you expected, what you got (error text)." }
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes: { label: Minimal reproduction, description: "Steps starting from `examples/make_footage.sh` footage if possible." }
+  - type: textarea
+    id: logs
+    attributes: { label: Logs, description: "Redact anything private. Never paste API keys." }

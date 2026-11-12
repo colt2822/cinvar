@@ -1,0 +1,6 @@
+CINVAR
+Copyright 2026 The CINVAR contributors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product links third-party Rust crates and invokes external programs; see THIRD_PARTY_NOTICES.md.

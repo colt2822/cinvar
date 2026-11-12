@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "org.cinvar.example.project-stats",
+  "name": "project-stats",
+  "version": "1.0.0",
+  "description": "Example plugin: summarises the current project (asset, timeline and clip counts) from project.json.",
+  "cinvar_min": "0.1.0",
+  "license": "Apache-2.0",
+  "capabilities": ["analysis.project"],
+  "platforms": ["linux", "macos"],
+  "requires": ["python3"],
+  "inputs": ["project.json"],
+  "outputs": ["json"],
+  "install": "Copy this directory to <config dir>/plugins/project-stats, then enable it: cinvar.plugins.set_enabled {id: \"org.cinvar.example.project-stats\", enabled: true}.",
+  "permissions": { "spawn_subprocess": true, "network": false, "write_paths": [] },
+  "tools": [
+    {
+      "name": "stats",
+      "description": "Count assets, timelines, tracks and clips in the open project. Read-only; writes nothing.",
+      "input": {
+        "type": "object",
+        "properties": { "include_asset_names": { "type": "boolean", "description": "also list asset names" } }
+      },
+      "command": ["bin/project-stats"],
+      "timeout_secs": 15
+    }
+  ]
+}

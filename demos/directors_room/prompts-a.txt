@@ -1,0 +1,3 @@
+Make a cinematic trailer of about 25 seconds from this footage. Use the strongest shots, give it a real build and an ending, put a title card on it, and use music-bed.wav as the score. Finish with an exported 1080p MP4.
+
+Before you call it done, preview/export it, open frames from the render around every cut and around the title, and fix anything that looks wrong. In your final answer give the output path, the duration, the revision number and a short honest critique of your own edit.

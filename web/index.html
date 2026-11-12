@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CINVAR</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b0d10; --panel:#14181d; --line:#232a32; --fg:#e7ecf2; --muted:#8b96a5; --accent:#4f8cff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  header { display:flex; align-items:baseline; gap:12px; padding:14px 20px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; letter-spacing:.18em; }
+  header span { color:var(--muted); font-size:12px; }
+  main { display:grid; grid-template-columns: 280px 1fr 320px; gap:16px; padding:16px; height:calc(100vh - 56px); }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; overflow:auto; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:var(--muted); margin:0 0 10px; }
+  .row { display:flex; gap:8px; margin-bottom:8px; }
+  input, textarea, button, select { font:inherit; background:#0f1318; color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:7px 9px; }
+  input, textarea { width:100%; }
+  textarea { resize:vertical; min-height:64px; }
+  button { cursor:pointer; background:#1b2330; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#04101f; font-weight:600; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { padding:6px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .muted { color:var(--muted); font-size:12px; }
+  #chat { display:flex; flex-direction:column; height:100%; }
+  #log { flex:1; overflow:auto; padding-right:6px; }
+  .msg { margin-bottom:10px; padding:8px 10px; border-radius:8px; background:#0f1318; border:1px solid var(--line); white-space:pre-wrap; }
+  .msg.user { border-color:#2b3d5c; }
+  .msg.tool { font-size:12px; color:var(--muted); }
+  .pill { display:inline-block; padding:1px 7px; border:1px solid var(--line); border-radius:999px; font-size:11px; color:var(--muted); margin-right:4px; }
+  progress { width:100%; height:8px; }
+  video { width:100%; border-radius:8px; margin-top:8px; background:#000; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CINVAR</h1><span>your models. your vision. your studio.</span>
+  <span id="proj-label" class="muted" style="margin-left:auto"></span>
+</header>
+<main>
+  <section>
+    <h2>Project</h2>
+    <div class="row"><input id="proj-name" placeholder="New project name"><button onclick="createProject()">Create</button></div>
+    <div class="row"><input id="proj-dir" placeholder="/path/to/existing/project"><button onclick="openProject()">Open</button></div>
+    <div id="proj-info" class="muted">no project open</div>
+    <h2 style="margin-top:16px">Assets</h2>
+    <ul id="assets"><li class="muted">none</li></ul>
+    <h2 style="margin-top:16px">Renders</h2>
+    <ul id="renders"><li class="muted">none</li></ul>
+  </section>
+
+  <section id="chat">
+    <h2>Studio</h2>
+    <div id="log"><div class="msg tool">Describe what you want. Example: "Take the clips in ./footage and make a 30 second cinematic teaser with a title."</div></div>
+    <textarea id="prompt" placeholder="Make me a vertical short with captions..."></textarea>
+    <div class="row" style="margin-top:8px">
+      <button class="primary" onclick="send()">Send</button>
+      <button onclick="render(false)">Export</button>
+      <button onclick="render(true)">Preview</button>
+    </div>
+    <div id="progress" class="muted"></div>
+  </section>
+
+  <section>
+    <h2>Timeline</h2>
+    <div id="timeline" class="muted">no timeline</div>
+    <h2 style="margin-top:16px">Preview</h2>
+    <video id="player" controls></video>
+    <h2 style="margin-top:16px">Skills</h2>
+    <ul id="skills"><li class="muted">loading...</li></ul>
+    <h2 style="margin-top:16px">Models</h2>
+    <div id="models" class="muted">loading...</div>
+  </section>
+</main>
+<script>
+const el = (id) => document.getElementById(id);
+let currentRender = null;
+
+function addLog(kind, text) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + kind;
+  div.textContent = text;
+  el('log').appendChild(div);
+  el('log').scrollTop = el('log').scrollHeight;
+}
+
+async function api(path, method, body) {
+  const res = await fetch(path, {
+    method: method || 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.json();
+}
+
+async function refresh() {
+  const s = await api('/api/status');
+  if (s.open) {
+    el('proj-label').textContent = s.name + '  ·  ' + s.path;
+    el('proj-info').textContent = 'revision ' + s.revision + ' · ' + (s.issues.length ? s.issues.length + ' issue(s)' : 'no structural issues');
+    el('assets').innerHTML = (s.assets || []).map(a =>
+      '<li>' + a.name + ' <span class="muted">' + (a.seconds ? a.seconds.toFixed(1) + 's' : '') + (a.missing ? ' · missing' : '') + '</span></li>').join('') || '<li class="muted">none</li>';
+    el('timeline').innerHTML = (s.timelines || []).map(t =>
+      '<div>' + t.name + ' · ' + t.duration.toFixed(2) + 's · ' + t.width + 'x' + t.height + ' · ' + t.clips + ' clips</div>').join('') || '<span class="muted">no timeline</span>';
+    el('renders').innerHTML = (s.renders || []).map(r => '<li><a href="#" onclick="play(\'' + r + '\')">' + r + '</a></li>').join('') || '<li class="muted">none</li>';
+  } else {
+    el('proj-info').textContent = 'no project open';
+  }
+}
+
+async function createProject() {
+  const name = el('proj-name').value.trim() || 'Cinvar Project';
+  const res = await api('/api/project', 'POST', { name });
+  if (res.error) return addLog('tool', 'error: ' + res.error);
+  addLog('tool', 'created project at ' + res.path);
+  refresh();
+}
+
+async function openProject() {
+  const dir = el('proj-dir').value.trim();
+  const res = await api('/api/open', 'POST', { dir });
+  if (res.error) return addLog('tool', 'error: ' + res.error);
+  addLog('tool', 'opened ' + res.path);
+  refresh();
+}
+
+async function send() {
+  const message = el('prompt').value.trim();
+  if (!message) return;
+  el('prompt').value = '';
+  addLog('user', message);
+  addLog('tool', 'thinking...');
+  const res = await api('/api/chat', 'POST', { message });
+  if (res.error) { addLog('tool', 'error: ' + res.error); return; }
+  addLog('assistant', res.text || '(no text returned)');
+  if (res.tool_calls && res.tool_calls.length) {
+    addLog('tool', res.tool_calls.map(t => (t.ok ? 'ok ' : 'failed ') + t.name).join(' · '));
+  }
+  refresh();
+}
+
+async function render(preview) {
+  const res = await api('/api/render', 'POST', { preview });
+  if (res.error) return addLog('tool', 'error: ' + res.error);
+  currentRender = res.job_id;
+  addLog('tool', 'render started: ' + res.output);
+  poll();
+}
+
+async function poll() {
+  if (!currentRender) return;
+  const job = await api('/api/jobs/' + currentRender);
+  if (!job) return;
+  el('progress').textContent = job.status + ' ' + Math.round((job.progress || 0) * 100) + '% ' + (job.message || '');
+  if (job.status === 'running' || job.status === 'queued') { setTimeout(poll, 700); return; }
+  if (job.status === 'succeeded') {
+    addLog('tool', 'render complete');
+    const out = job.output && (job.output.output || job.output.file);
+    if (out) play(out.split('/').pop());
+    refresh();
+  } else {
+    addLog('tool', 'render failed: ' + ((job.error && job.error.message) || job.status));
+  }
+}
+
+async function play(name) {
+  el('player').src = '/api/media/' + encodeURIComponent(name);
+}
+
+async function loadMeta() {
+  const skills = await api('/api/skills');
+  el('skills').innerHTML = (skills || []).map(s => '<li>' + s.name + ' <span class="muted">— ' + s.title + '</span></li>').join('') || '<li class="muted">none</li>';
+  const models = await api('/api/models');
+  el('models').textContent = models.active ? ('active: ' + models.active + ' — ' + (models.models || []).join(', ')) : 'no model configured';
+}
+
+refresh(); loadMeta(); setInterval(refresh, 4000);
+</script>
+</body>
+</html>

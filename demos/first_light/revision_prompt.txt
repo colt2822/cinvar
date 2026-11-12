@@ -1,0 +1,3 @@
+The opening feels too slow. Make it more dramatic, shorten the intro, increase the title impact, and improve the ending.
+
+Operational context: this is the same project you just finished (first-light), served by the cinvar MCP server. Inspect the existing timeline before changing anything, keep the existing assets and the rest of the edit, and do not start a new project. Preserve the previous revision so I can roll back. Render the updated version, inspect at least three frames of the new render, and then tell me exactly what you changed and where the new file is.

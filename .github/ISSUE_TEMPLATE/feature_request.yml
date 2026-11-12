@@ -1,0 +1,16 @@
+name: Feature request
+description: Suggest an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes: { label: What are you trying to do? }
+    validations: { required: true }
+  - type: textarea
+    id: idea
+    attributes: { label: Proposed behaviour / acceptance criteria }
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [core engine, mcp, blender, cloud rendering, ai integrations, cross-platform, user experience, plugins, docs]
