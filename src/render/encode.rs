@@ -34,6 +34,12 @@ pub(super) enum Codec {
     H264,
     Hevc,
     Vp9,
+    /// Apple ProRes 422 HQ (mezzanine/mastering; CINVAR Pro).
+    ProRes,
+    /// Avid DNxHR HQ (mezzanine/editing interchange; CINVAR Pro).
+    Dnxhr,
+    /// AV1 (smaller files for the same quality; CINVAR Pro).
+    Av1,
 }
 
 impl Codec {
@@ -42,6 +48,9 @@ impl Codec {
             Codec::H264 => "h264",
             Codec::Hevc => "hevc",
             Codec::Vp9 => "vp9",
+            Codec::ProRes => "prores",
+            Codec::Dnxhr => "dnxhr",
+            Codec::Av1 => "av1",
         }
     }
 }
@@ -56,6 +65,19 @@ pub(super) struct EncoderPlan {
     pub warnings: Vec<String>,
     pub pix_fmt: String,
     pub bit_depth: u8,
+}
+
+/// `8M`, `5000k`, `2500000`: digits with an optional k/K/m/M suffix, 100 kbit/s .. 1 Gbit/s.
+pub fn valid_bitrate(b: &str) -> bool {
+    let (digits, mult) = match b.chars().last() {
+        Some('k') | Some('K') => (&b[..b.len() - 1], 1_000u64),
+        Some('m') | Some('M') => (&b[..b.len() - 1], 1_000_000u64),
+        _ => (b, 1u64),
+    };
+    digits.len() <= 9
+        && !digits.is_empty()
+        && digits.bytes().all(|c| c.is_ascii_digit())
+        && digits.parse::<u64>().map(|n| (100_000..=1_000_000_000).contains(&(n * mult))).unwrap_or(false)
 }
 
 fn args(values: &[&str]) -> Vec<String> {
@@ -162,6 +184,29 @@ fn parse_codec(raw: &str) -> Option<Codec> {
         "h264" | "avc" | "libx264" | "x264" | "h.264" => Some(Codec::H264),
         "hevc" | "h265" | "h.265" | "libx265" | "x265" => Some(Codec::Hevc),
         "vp9" | "libvpx-vp9" | "webm" => Some(Codec::Vp9),
+        "prores" | "prores_ks" | "prores422" | "prores-422" | "apple prores" => Some(Codec::ProRes),
+        "dnxhr" | "dnxhd" | "avcintra" => Some(Codec::Dnxhr),
+        "av1" | "libsvtav1" | "svt-av1" => Some(Codec::Av1),
+        _ => None,
+    }
+}
+
+/// The codec this render will actually ask for: the request's, else the project setting.
+pub(super) fn requested_codec<'a>(project: &'a Project, request: &'a RenderRequest) -> &'a str {
+    request
+        .codec
+        .as_deref()
+        .filter(|c| !c.trim().is_empty())
+        .unwrap_or_else(|| project.render.video_codec.as_str())
+}
+
+/// Name of the Pro feature a requested codec needs, or `None` for the free codecs. This is the one
+/// place the codec -> edition mapping lives, so the render gate and the CLI report agree.
+pub(super) fn pro_codec(raw: &str) -> Option<&'static str> {
+    match parse_codec(raw)? {
+        Codec::ProRes => Some("ProRes"),
+        Codec::Dnxhr => Some("DNxHR"),
+        Codec::Av1 => Some("AV1"),
         _ => None,
     }
 }
@@ -200,11 +245,7 @@ pub(super) fn choose(
     let settings = &project.render;
     let container = container_of(request);
 
-    let requested_codec = request
-        .codec
-        .as_deref()
-        .filter(|c| !c.trim().is_empty())
-        .unwrap_or(settings.video_codec.as_str());
+    let requested_codec = requested_codec(project, request);
     let mut codec = match parse_codec(requested_codec) {
         Some(codec) => codec,
         None => {
@@ -214,7 +255,7 @@ pub(super) fn choose(
             Codec::H264
         }
     };
-    if container == "webm" && codec != Codec::Vp9 {
+    if container == "webm" && !matches!(codec, Codec::Vp9 | Codec::Av1) {
         warnings.push(format!(
             "{} cannot be muxed into webm; switching to vp9",
             codec.as_str()
@@ -241,15 +282,20 @@ pub(super) fn choose(
     let (w, h) = size;
     let large = (w as u64) * (h as u64) > 1920 * 1088;
     let hardware = request.hardware.unwrap_or(settings.hardware);
+    // ProRes, DNxHR and AV1 are mezzanine/delivery codecs with no NVENC-equivalent path wired up
+    // here (av1_nvenc exists but its rate control differs), so they always run on the CPU.
     let hw_candidate = match codec {
         Codec::H264 => Some("h264_nvenc"),
         Codec::Hevc => Some("hevc_nvenc"),
-        Codec::Vp9 => None,
+        Codec::Vp9 | Codec::ProRes | Codec::Dnxhr | Codec::Av1 => None,
     };
     let mut encoder = match codec {
         Codec::H264 => "libx264".to_string(),
         Codec::Hevc => "libx265".to_string(),
         Codec::Vp9 => "libvpx-vp9".to_string(),
+        Codec::ProRes => "prores_ks".to_string(),
+        Codec::Dnxhr => "dnxhd".to_string(),
+        Codec::Av1 => "libsvtav1".to_string(),
     };
     let mut use_hardware = false;
     if hardware != HwMode::Off {
@@ -293,10 +339,10 @@ pub(super) fn choose(
             }
             None => {
                 if hardware == HwMode::Force {
-                    warnings.push(
-                        "hardware encoding was requested for vp9, which has no hardware path here; rendering on the CPU"
-                            .to_string(),
-                    );
+                    warnings.push(format!(
+                        "hardware encoding was requested for {}, which has no hardware path here; rendering on the CPU",
+                        codec.as_str()
+                    ));
                 }
             }
         }
@@ -308,13 +354,24 @@ pub(super) fn choose(
         "yuv420p"
     };
     let crf = crf.to_string();
+    let bitrate = match request.video_bitrate.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
+        Some(b) if valid_bitrate(b) => Some(b.to_string()),
+        Some(b) => {
+            warnings.push(format!("invalid bitrate '{b}' (use e.g. 8M or 5000k); using CRF quality instead"));
+            None
+        }
+        None => None,
+    };
     let mut video_args: Vec<String> = Vec::new();
     if use_hardware {
         video_args.extend(args(&["-c:v", encoder.as_str()]));
         match codec {
             Codec::H264 | Codec::Hevc => {
                 video_args.extend(args(&["-preset", nvenc_preset(preset)]));
-                video_args.extend(args(&["-rc", "vbr", "-cq", crf.as_str(), "-b:v", "0"]));
+                match bitrate.as_deref() {
+                    Some(b) => video_args.extend(args(&["-rc", "vbr", "-b:v", b])),
+                    None => video_args.extend(args(&["-rc", "vbr", "-cq", crf.as_str(), "-b:v", "0"])),
+                }
                 let hw_pix = if codec == Codec::Hevc && bit_depth == 10 {
                     "p010le"
                 } else {
@@ -325,23 +382,51 @@ pub(super) fn choose(
                     video_args.extend(args(&["-tag:v", "hvc1"]));
                 }
             }
-            Codec::Vp9 => {}
+            Codec::Vp9 | Codec::ProRes | Codec::Dnxhr | Codec::Av1 => {}
         }
     } else {
         match codec {
             Codec::H264 => {
                 video_args.extend(args(&["-c:v", "libx264"]));
-                video_args.extend(args(&["-preset", preset, "-crf", crf.as_str()]));
+                match bitrate.as_deref() {
+                    Some(b) => video_args.extend(args(&["-preset", preset, "-b:v", b])),
+                    None => video_args.extend(args(&["-preset", preset, "-crf", crf.as_str()])),
+                }
                 video_args.extend(args(&["-pix_fmt", sw_pix]));
             }
             Codec::Hevc => {
                 video_args.extend(args(&["-c:v", "libx265"]));
-                video_args.extend(args(&["-preset", preset, "-crf", crf.as_str()]));
+                match bitrate.as_deref() {
+                    Some(b) => video_args.extend(args(&["-preset", preset, "-b:v", b])),
+                    None => video_args.extend(args(&["-preset", preset, "-crf", crf.as_str()])),
+                }
                 video_args.extend(args(&["-pix_fmt", sw_pix, "-tag:v", "hvc1"]));
+            }
+            Codec::ProRes => {
+                // profile 3 = ProRes 422 HQ; apl0 marks the file as Apple-produced so editors
+                // that key off the vendor tag (Resolve, FCP) treat it as a normal master.
+                video_args.extend(args(&[
+                    "-c:v", "prores_ks", "-profile:v", "3", "-pix_fmt", "yuv422p10le", "-vendor",
+                    "apl0",
+                ]));
+            }
+            Codec::Dnxhr => {
+                video_args.extend(args(&["-c:v", "dnxhd", "-profile:v", "dnxhr_hq", "-pix_fmt", "yuv422p"]));
+            }
+            Codec::Av1 => {
+                video_args.extend(args(&["-c:v", "libsvtav1"]));
+                match bitrate.as_deref() {
+                    Some(b) => video_args.extend(args(&["-b:v", b])),
+                    None => video_args.extend(args(&["-crf", crf.as_str(), "-preset", "8"])),
+                }
+                video_args.extend(args(&["-pix_fmt", "yuv420p"]));
             }
             Codec::Vp9 => {
                 video_args.extend(args(&["-c:v", "libvpx-vp9"]));
-                video_args.extend(args(&["-crf", crf.as_str(), "-b:v", "0", "-row-mt", "1"]));
+                match bitrate.as_deref() {
+                    Some(b) => video_args.extend(args(&["-b:v", b, "-row-mt", "1"])),
+                    None => video_args.extend(args(&["-crf", crf.as_str(), "-b:v", "0", "-row-mt", "1"])),
+                }
                 video_args.extend(args(&["-pix_fmt", "yuv420p"]));
             }
         }
@@ -386,14 +471,19 @@ pub(super) fn choose(
         audio_args,
         muxer,
         warnings,
-        pix_fmt: if use_hardware && codec == Codec::Hevc && bit_depth == 10 {
-            "p010le".to_string()
-        } else if use_hardware {
-            "yuv420p".to_string()
-        } else {
-            sw_pix.to_string()
-        },
-        bit_depth,
+        pix_fmt: reported_pix_fmt(codec, use_hardware, bit_depth, sw_pix).0,
+        bit_depth: reported_pix_fmt(codec, use_hardware, bit_depth, sw_pix).1,
+    }
+}
+
+/// The pixel format and bit depth the plan really produces, for capability/memory estimates.
+fn reported_pix_fmt(codec: Codec, use_hardware: bool, bit_depth: u8, sw_pix: &str) -> (String, u8) {
+    match codec {
+        Codec::ProRes => ("yuv422p10le".to_string(), 10),
+        Codec::Dnxhr => ("yuv422p".to_string(), 8),
+        Codec::Hevc if use_hardware && bit_depth == 10 => ("p010le".to_string(), bit_depth),
+        _ if use_hardware => ("yuv420p".to_string(), bit_depth),
+        _ => (sw_pix.to_string(), bit_depth),
     }
 }
 
@@ -414,6 +504,19 @@ mod tests {
         assert_eq!(parse_codec("HEVC"), Some(Codec::Hevc));
         assert_eq!(parse_codec("libvpx-vp9"), Some(Codec::Vp9));
         assert_eq!(parse_codec("mpeg4"), None);
+        assert_eq!(parse_codec("ProRes"), Some(Codec::ProRes));
+        assert_eq!(parse_codec("dnxhr"), Some(Codec::Dnxhr));
+        assert_eq!(parse_codec("libsvtav1"), Some(Codec::Av1));
+    }
+
+    #[test]
+    fn pro_codecs_are_named_for_the_edition_gate() {
+        assert_eq!(pro_codec("prores"), Some("ProRes"));
+        assert_eq!(pro_codec("dnxhd"), Some("DNxHR"));
+        assert_eq!(pro_codec("av1"), Some("AV1"));
+        assert_eq!(pro_codec("h264"), None);
+        assert_eq!(pro_codec("hevc"), None);
+        assert_eq!(pro_codec("vp9"), None);
     }
 
     #[test]

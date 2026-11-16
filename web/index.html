@@ -46,8 +46,8 @@ input[type=checkbox]{width:auto;accent-color:var(--accent)}
 .pbar{width:150px;height:6px;background:var(--line);border-radius:6px;overflow:hidden;display:none}
 .pbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
 /* workspace */
-.work{display:grid;grid-template-columns:var(--left) 5px 1fr 5px var(--right);min-height:0}
-.work.noleft{grid-template-columns:0 0 1fr 5px var(--right)}.work.noright{grid-template-columns:var(--left) 5px 1fr 0 0}.work.noleft.noright{grid-template-columns:0 0 1fr 0 0}
+.work{display:grid;grid-template-columns:var(--left) 5px minmax(0,1fr) 5px var(--right);min-height:0;min-width:0}
+.work.noleft{grid-template-columns:0 0 minmax(0,1fr) 5px var(--right)}.work.noright{grid-template-columns:var(--left) 5px minmax(0,1fr) 0 0}.work.noleft.noright{grid-template-columns:0 0 minmax(0,1fr) 0 0}
 .work.noleft>.left,.work.noleft>.rz1,.work.noright>.right,.work.noright>.rz2{display:none}
 .rz{cursor:col-resize;background:var(--line);opacity:.5}.rz:hover{background:var(--accent);opacity:1}
 .panel{background:var(--panel);display:flex;flex-direction:column;min-height:0;min-width:0}
@@ -78,10 +78,10 @@ input[type=checkbox]{width:auto;accent-color:var(--accent)}
 .screen .ph svg{width:64px;height:64px;opacity:.5}
 .statline{display:flex;gap:14px;color:var(--muted);font-size:12px;width:100%}
 .rzh{cursor:row-resize;background:var(--line);opacity:.5}.rzh:hover{background:var(--accent);opacity:1}
-.tl{display:flex;flex-direction:column;background:var(--panel);min-height:0;border-top:1px solid var(--line)}
+.tl{display:flex;flex-direction:column;background:var(--panel);min-height:0;min-width:0;overflow:hidden;border-top:1px solid var(--line)}
 .tlbar{display:flex;gap:10px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--bg2)}
 .tlbar input[type=range]{width:120px}
-.tlscroll{flex:1;overflow:auto;position:relative}
+.tlscroll{flex:1;min-width:0;min-height:0;overflow:auto;position:relative;overscroll-behavior:contain}
 .tlin{position:relative;min-height:100%}
 .ruler{position:sticky;top:0;height:24px;background:var(--bg2);border-bottom:1px solid var(--line);z-index:3}
 .ruler span{position:absolute;top:4px;font-size:10px;color:var(--muted);transform:translateX(3px)}
@@ -138,12 +138,51 @@ h3:first-child{margin-top:0}
 .pal .res div.sel{background:var(--panel2)}
 .pal kbd,kbd{font:11px ui-monospace,monospace;background:var(--bg2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--muted)}
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:9px 16px;border-radius:99px;z-index:80;display:none;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.vg{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:8px 10px;border:1px dashed var(--line);border-radius:var(--radius,8px);font-size:12px}.vg label{display:flex;gap:6px;align-items:center}.skchips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}.skchip{display:inline-flex;gap:5px;align-items:center;padding:2px 9px;border-radius:99px;border:1px solid var(--line);font-size:11px;cursor:default}.skchip.pin{border-color:var(--accent,#38bdf8)}.skchip.auto{opacity:.85}.skchip b{font-weight:600}.skchip button{all:unset;cursor:pointer;opacity:.7}#stale{position:fixed;z-index:50;top:0;left:0;right:0;display:flex;gap:12px;justify-content:center;align-items:center;padding:7px;background:var(--accent,#38bdf8);color:#04121c;font-weight:650;font-size:13px}#stale[hidden]{display:none}#stale button{background:#04121c;color:#fff;border:0;border-radius:6px;padding:3px 12px;cursor:pointer}
+.tlsel{max-width:340px;min-width:0;padding:3px 8px;font-size:12px;flex:0 1 auto}#tlInfo{white-space:nowrap}.tlbar b{white-space:nowrap}
+.tlbar{min-height:34px}
+.trk:nth-child(even){background:color-mix(in srgb,var(--bg2) 45%,transparent)}
+.trk .lab{gap:7px}.trk .lab span{display:inline-block;flex:none}
+.clip{border-radius:6px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),0 1px 2px rgba(0,0,0,.4);transition:filter .12s}.clip:hover{filter:brightness(1.12)}
+.clip.ctext{background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.08) 0 6px,transparent 6px 12px)}
+.ruler{box-shadow:0 1px 0 var(--line)}.ruler span{font-variant-numeric:tabular-nums}
+.roles{display:grid;gap:8px}.role{display:grid;grid-template-columns:170px 1fr 1fr;gap:8px;align-items:center}.role .rt{display:flex;flex-direction:column;font-weight:600}.role .rt .muted{font-weight:400;font-size:11px}
+.conn{display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius,8px);margin-bottom:6px}.conn .nm{font-weight:600}.conn .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;background:var(--bad)}.conn .dot.on{background:var(--ok)}
+.conn .edit{grid-column:1 / span 2;display:none;gap:6px}.conn.open .edit{display:flex}.conn .edit input{flex:1}
 .badge{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;border:1px solid var(--line)}
 .badge.ok{color:var(--ok)}.badge.bad{color:var(--bad)}
-@media(max-width:1000px){.work{grid-template-columns:0 0 1fr 5px 320px}.left,.rz1{display:none}}
+@media(max-width:1000px){.work{grid-template-columns:0 0 minmax(0,1fr) 5px 320px}.left,.rz1{display:none}}
+.edbtn{padding:4px 8px}.edbadge{font-weight:750;letter-spacing:.12em;font-size:11px;border:1px solid var(--line);border-radius:999px;padding:2px 9px}
+.edbadge.pro{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.probadge{display:inline-block;font-size:10px;font-weight:750;letter-spacing:.1em;border:1px solid var(--accent);color:var(--accent);border-radius:5px;padding:0 5px;margin-left:6px;vertical-align:middle}
+.probadge.exp{border-color:var(--warn);color:var(--warn)}
+.lockrow{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:9px 0;border-bottom:1px solid var(--line)}
+.lockrow .d{grid-column:1/2;color:var(--muted);font-size:12px}.lockrow .s{grid-row:1/3;grid-column:2;align-self:center;font-size:12px}
+.lockbox{border:1px dashed var(--accent);border-radius:var(--radius);padding:12px;margin-bottom:12px;background:color-mix(in srgb,var(--accent) 7%,transparent)}
+#mPro .card{width:min(820px,94vw);max-height:90vh;display:flex;flex-direction:column}#mPro .pbody{overflow:auto;padding:var(--pad)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.btable{width:100%;border-collapse:collapse}.btable td,.btable th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;font-size:12px}
+.st-succeeded{color:var(--ok)}.st-failed{color:var(--bad)}.st-running{color:var(--accent)}.st-cancelled,.st-skipped{color:var(--warn)}
+fieldset.locked{opacity:.5;pointer-events:none}
+/* production suite (Shorts, captions, audio, AI setup, Blender) */
+#mAr .card{width:min(900px,96vw);max-height:90vh;display:flex;flex-direction:column}#mAr .pbody{overflow:auto;padding:var(--pad)}
+.offnote{border:1px dashed var(--warn);border-radius:var(--radius);padding:10px 12px;margin-bottom:10px;background:color-mix(in srgb,var(--warn) 8%,transparent);font-size:12px;line-height:1.55}
+.offnote b{color:var(--warn)}
+.offnote code,.feat{font:11px ui-monospace,monospace;background:var(--bg2);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.arfs{border:0;padding:0;margin:0;min-width:0}
+.prog{display:flex;align-items:center;gap:9px;margin:8px 0;font-size:12px}.prog .bar{flex:1;height:7px;min-width:80px;background:var(--line);border-radius:6px;overflow:hidden}.prog .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s}
+.views{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}
+.views figure{margin:0;background:#000;border:1px solid var(--line);border-radius:8px;position:relative;overflow:hidden}
+.views img{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#000}
+.views figcaption{position:absolute;left:7px;top:5px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);background:rgba(0,0,0,.45);border-radius:4px;padding:0 5px}
+.views .no{aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;text-align:center;padding:8px}
+.warnlist .w{padding:6px 9px;border-left:3px solid var(--warn);background:var(--panel2);border-radius:0 6px 6px 0;margin-bottom:5px;font-size:12px}
+.warnlist .w.err{border-left-color:var(--bad)}
+.chk{display:grid;gap:5px;margin-bottom:10px}.chk label{display:flex;gap:7px;align-items:center}
 </style>
 </head>
 <body>
+<div id="stale" hidden><span>CINVAR was updated while this page was open.</span><button id="staleBtn">Reload now</button></div>
 <div class="app">
   <div class="top">
     <div class="brand">
@@ -159,6 +198,8 @@ h3:first-child{margin-top:0}
     <button id="btnPrev" title="Fast low-res preview (Ctrl+P)">▶ Preview</button>
     <button class="primary" id="btnExp" title="Full quality export (Ctrl+E)">⬇ Export</button>
     <button class="ghost" id="btnPal" title="Command palette (Ctrl+K)">⌘K</button>
+    <button class="ghost edbtn" id="btnEd" title="Edition, license and Pro features"><span id="edBadge" class="edbadge">…</span></button>
+    <button class="ghost" id="btnAr" title="Shorts, captions, audio, AI setup and Blender">◆ Suite</button>
     <button class="ghost" id="btnSet" title="Settings">⚙</button>
   </div>
 
@@ -181,7 +222,7 @@ h3:first-child{margin-top:0}
       </div>
       <div class="rzh" id="rzh"></div>
       <div class="tl">
-        <div class="tlbar"><b>Timeline</b><span id="tlName" class="muted"></span><span class="spacer"></span><span class="muted">Zoom</span><input type="range" id="zoom" min="10" max="240" value="60"><button class="ghost" id="fit">Fit</button></div>
+        <div class="tlbar"><b>Timeline</b><span id="tlName" class="muted"></span><select id="tlSel" class="tlsel" title="Switch timeline" hidden></select><span id="tlInfo" class="muted"></span><span class="spacer"></span><span class="muted">Zoom</span><input type="range" id="zoom" min="0" max="1000" value="500"><button class="ghost" id="fit">Fit</button></div>
         <div class="tlscroll" id="tlscroll"><div class="tlin" id="tlin"></div></div>
       </div>
     </div>
@@ -193,6 +234,7 @@ h3:first-child{margin-top:0}
         <div class="log" id="log"></div>
         <div class="sugg" id="sugg"></div>
         <div class="composer">
+          <div class="skchips" id="skchips"></div>
           <textarea id="prompt" placeholder="Tell the editor what to make…  (Enter to send, Shift+Enter for a new line)"></textarea>
           <div class="row"><button class="primary" id="send">Send</button><button id="clear" class="ghost">Clear chat</button><span class="spacer"></span><span class="muted" id="modelNote"></span></div>
         </div>
@@ -216,6 +258,25 @@ h3:first-child{margin-top:0}
 
 <!-- settings modal -->
 <div class="modal" id="mSet"><div class="card"><header>Settings<span class="spacer"></span><button class="ghost" data-close>✕</button></header><div class="in">
+  <h3>Models for each job</h3>
+  <div class="roles">
+    <div class="role"><div class="rt">Assistant<span class="muted">runs the editing agent</span></div><select id="rAsP"></select><select id="rAsM"></select></div>
+    <div class="role"><div class="rt">Script writer<span class="muted">narration &amp; copy</span></div><select id="rScP"></select><select id="rScM"></select></div>
+    <div class="role"><div class="rt">Blender<span class="muted">3D titles &amp; logo reveals</span></div><select id="rBlP"></select><select id="rBlM"></select></div>
+    <div class="role"><div class="rt">Motion graphics<span class="muted">titles, lower thirds, keyframes</span></div><select id="rMoP"></select><select id="rMoM"></select></div>
+    <div class="role"><div class="rt">Video generation<span class="muted">generated clips (can cost money)</span></div><select id="rVid" style="grid-column:2 / span 2"></select></div>
+    <div id="vgBox" class="vg">
+      <label><input type="checkbox" id="vgOn"> Let the assistant generate video with paid providers</label>
+      <span class="muted">Limits (seconds of video):</span>
+      <label>per clip <input id="vgJob" type="number" min="1" max="60" style="width:64px"></label>
+      <label>per day <input id="vgDay" type="number" min="1" max="3600" style="width:72px"></label>
+      <span id="vgUsed" class="muted"></span>
+    </div>
+  </div>
+  <div id="roleMsg" class="muted" style="min-height:18px;margin:2px 0 10px"></div>
+  <h3>Connections</h3>
+  <div id="conns"></div>
+  <p class="muted" style="font-size:12px;margin:8px 0 14px">Keys are saved only in your local CINVAR credential file (owner-only) and sent only to that provider. “Claude (your subscription)” runs your own signed-in Claude Code, so CINVAR never sees that login; run <code>claude auth login</code> once if it shows as not connected.</p>
   <h3>Appearance</h3>
   <div class="field"><label>Theme</label><div class="themes" id="themes"></div></div>
   <div class="field"><label>Accent colour</label><div class="sw" id="swatches"></div></div>
@@ -229,6 +290,7 @@ h3:first-child{margin-top:0}
   <div class="field"><label>Timeline height</label><input type="range" id="tlh" min="140" max="560"></div>
   <h3>Assistant</h3>
   <div class="field"><label>Send with</label><select id="sendKey"><option value="enter">Enter</option><option value="mod">Ctrl/⌘ + Enter</option></select></div>
+  <div class="field"><label>Pick skills automatically</label><input type="checkbox" id="autoSk"></div>
   <div class="field"><label>Show tool calls</label><input type="checkbox" id="showTools"></div>
   <div class="field"><label>Auto-play new renders</label><input type="checkbox" id="autoplay"></div>
   <h3>System check</h3>
@@ -238,12 +300,166 @@ h3:first-child{margin-top:0}
 
 <!-- command palette -->
 <div class="pal" id="pal"><input id="palIn" placeholder="Type a command…" style="border:none;border-bottom:1px solid var(--line);border-radius:14px 14px 0 0;padding:14px"><div class="res" id="palRes"></div></div>
+<div class="modal" id="mPro"><div class="card"><header>CINVAR <span id="pe_title">Free</span><span class="spacer"></span><button class="ghost" data-close>✕</button></header>
+  <div class="tabs"><button class="tab on" data-g="pro" data-t="edition">Edition &amp; license</button><button class="tab" data-g="pro" data-t="batch">Batch render</button><button class="tab" data-g="pro" data-t="presets">Export presets</button><button class="tab" data-g="pro" data-t="color">Advanced color</button></div>
+  <div class="pbody">
+  <div id="pro-edition"><div id="pe_status" class="muted" style="margin-bottom:8px"></div><div id="pe_catalog"></div>
+    <div class="field" style="margin-top:14px"><label>Order key</label><input id="pe_key" placeholder="Paste the order key from your purchase email" autocomplete="off" spellcheck="false"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:-4px 0 12px 180px"><button class="primary" id="pe_keygo">Activate order key</button><span id="pe_keymsg" class="muted"></span></div>
+    <div class="field"><label>License file</label><textarea id="pe_lic" rows="4" placeholder="Paste the contents of your license.json, or choose the file"></textarea></div>
+    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="primary" id="pe_act">Activate license</button><button id="pe_pick">Choose license file…</button><input type="file" id="pe_file" accept=".json,application/json" hidden><button id="pe_rm" class="ghost">Remove license</button><span class="spacer"></span><button id="pe_up">Upgrade to Pro ↗</button></div>
+    <div id="pe_msg" class="muted" style="margin-top:8px"></div>
+    <h4 style="margin:16px 0 6px">Features in this build</h4><div id="pe_feats"></div></div>
+  <div id="pro-batch" hidden><div id="pb_lock"></div><fieldset id="pb_box" style="border:0;padding:0;margin:0"><div class="muted" style="margin-bottom:8px">Each row is one export of the open project. Items render one after another; a failed item doesn't stop the others and finished files are kept.</div>
+    <div id="pb_rows"></div><div class="row" style="display:flex;gap:8px;margin:8px 0"><button id="pb_add">+ Add output</button><button class="primary" id="pb_go">Start batch</button><button id="pb_cancel" disabled>Cancel batch</button></div>
+    <div id="pb_out"></div></fieldset></div>
+  <div id="pro-presets" hidden><div id="pp_lock"></div><fieldset id="pp_box" style="border:0;padding:0;margin:0"><div id="pp_list"></div><h4 style="margin:14px 0 6px">New preset</h4>
+    <div class="grid3"><div class="field"><label>Name (a-z 0-9 - _)</label><input id="pp_name"></div><div class="field"><label>Width</label><input id="pp_w" type="number"></div><div class="field"><label>Height</label><input id="pp_h" type="number"></div>
+    <div class="field"><label>Frame rate</label><input id="pp_fps" placeholder="30"></div><div class="field"><label>Codec</label><select id="pp_codec"><option value="">(project default)</option><option>h264</option><option>hevc</option><option>vp9</option></select></div><div class="field"><label>Format</label><select id="pp_fmt"><option value="">(auto)</option><option>mp4</option><option>mov</option><option>webm</option><option>mkv</option></select></div>
+    <div class="field"><label>Bitrate (e.g. 8M)</label><input id="pp_br"></div><div class="field"><label>Quality CRF (0-51)</label><input id="pp_crf" type="number"></div><div class="field"><label>Bit depth</label><select id="pp_bd"><option value="">8</option><option>10</option></select></div></div>
+    <button class="primary" id="pp_save">Save preset</button> <span id="pp_msg" class="muted"></span></fieldset></div>
+  <div id="pro-color" hidden><div id="pc_lock"></div><fieldset id="pc_box" style="border:0;padding:0;margin:0">
+    <div class="field"><label>Apply to</label><select id="pc_target"></select></div>
+    <div class="grid2" id="pc_sliders"></div>
+    <div class="field"><label>Tone curve preset</label><select id="pc_curve"><option value="none">none</option></select></div>
+    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="primary" id="pc_apply">Apply grade</button><button id="pc_clear">Remove grade</button><button id="pc_reset" class="ghost">Reset sliders</button></div>
+    <h4 style="margin:14px 0 6px">Grade presets</h4><div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><input id="pc_pname" placeholder="preset name" style="width:180px"><button id="pc_psave">Save current as preset</button><select id="pc_plist" style="width:200px"></select><button id="pc_papply">Apply preset</button></div>
+    <div id="pc_msg" class="muted" style="margin-top:8px"></div></fieldset></div>
+  </div></div></div>
+
+<!-- production suite: Shorts, captions, audio, AI setup, Blender -->
+<div class="modal" id="mAr"><div class="card"><header>Production suite<span class="spacer"></span><span class="muted" style="font-weight:400;font-size:12px;margin-right:10px">a control is live only where the local server really implements its endpoint</span><button class="ghost" data-close>✕</button></header>
+  <div class="tabs"><button class="tab on" data-g="ar" data-t="shorts">Shorts</button><button class="tab" data-g="ar" data-t="caps">Captions</button><button class="tab" data-g="ar" data-t="audio">Audio</button><button class="tab" data-g="ar" data-t="setup">AI setup</button><button class="tab" data-g="ar" data-t="blender">Blender</button></div>
+  <div class="pbody">
+
+  <div id="ar-shorts">
+    <div id="offnote-shorts" class="offnote" hidden></div>
+    <fieldset id="suitefs-shorts" class="arfs">
+      <div class="muted" style="margin-bottom:10px">Cuts finished vertical Shorts out of one long recording: highlight selection, 9:16 reframing, word-highlight captions and a per-file QA verdict.</div>
+      <div class="grid2">
+        <div class="field"><label>Source recording</label><select id="ar_sh_src"></select></div>
+        <div class="field"><label>How many Shorts</label><input id="ar_sh_n" type="number" min="1" max="20" value="3"></div>
+        <div class="field"><label>Shortest (seconds)</label><input id="ar_sh_min" type="number" min="5" max="180" value="20"></div>
+        <div class="field"><label>Longest (seconds)</label><input id="ar_sh_max" type="number" min="5" max="180" value="60"></div>
+      </div>
+      <div class="field"><label>Vocabulary</label><input id="ar_sh_vocab" placeholder="Names, brands and technical words to spell correctly (comma separated)"></div>
+      <div class="field"><label>Save in folder</label><input id="ar_sh_dir" placeholder="(default: shorts/ inside the project)"></div>
+      <div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px"><button class="primary" id="ar_sh_go">Generate Shorts</button><span class="muted" id="ar_sh_msg"></span></div>
+      <div id="ar_sh_prog"></div>
+      <div id="ar_sh_out"></div>
+    </fieldset>
+  </div>
+
+  <div id="ar-caps" hidden>
+    <div id="offnote-caps" class="offnote" hidden></div>
+    <fieldset id="suitefs-caps" class="arfs">
+      <div class="grid2">
+        <div class="field"><label>Caption timing</label><select id="ar_cap_mode"></select></div>
+        <div class="field"><label>Style preset</label><select id="ar_cap_preset"></select></div>
+      </div>
+      <div id="ar_cap_wl"></div>
+      <div class="grid2">
+        <div class="field"><label>Size <span id="ar_cap_sizev" class="muted"></span></label><input type="range" id="ar_cap_size" min="12" max="160" step="1" value="48"></div>
+        <div class="field"><label>Text colour</label><input type="color" id="ar_cap_color" value="#ffffff"></div>
+        <div class="field"><label>Box behind text</label><input id="ar_cap_bg" placeholder="black@0.6, or empty for none"></div>
+        <div class="field"><label>Position</label><select id="ar_cap_pos"></select></div>
+      </div>
+      <div class="chk"><label><input type="checkbox" id="ar_cap_upper"> Render captions in capitals</label></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><button class="primary" id="ar_cap_apply">Apply to captions</button><button id="ar_cap_trans">Re-transcribe selected clip</button><span class="muted" id="ar_cap_msg"></span></div>
+      <h3>Save this look</h3>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input id="ar_cap_savename" placeholder="preset name" style="width:200px"><button id="ar_cap_save">Save style preset</button><span id="ar_cap_lock"></span></div>
+    </fieldset>
+  </div>
+
+  <div id="ar-audio" hidden>
+    <div id="offnote-audio" class="offnote" hidden></div>
+    <fieldset id="suitefs-audio" class="arfs">
+      <div class="muted" style="margin-bottom:10px">Splits the soundtrack into stems and builds a clean mix where music drops under speech.</div>
+      <div class="grid2">
+        <div class="field"><label>Audio source</label><select id="ar_au_src"></select></div>
+        <div class="field"><label>Stem model</label><select id="ar_au_model"><option value="htdemucs">htdemucs (4 stems)</option><option value="htdemucs_ft">htdemucs_ft (slower, better)</option><option value="mdx_extra">mdx_extra</option></select></div>
+      </div>
+      <div class="chk">
+        <label><input type="checkbox" id="ar_au_stems" checked> Separate into stems (vocals, drums, bass, other)</label>
+        <label><input type="checkbox" id="ar_au_duck" checked> Build a clean mix with music ducked under speech</label>
+        <label><input type="checkbox" id="ar_au_dn"> Reduce background noise</label>
+      </div>
+      <div class="field"><label>Duck music by <span id="ar_au_dbv" class="muted">-12 dB</span></label><input type="range" id="ar_au_db" min="-30" max="0" step="1" value="-12"></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><button class="primary" id="ar_au_go">Enhance audio</button><span class="muted" id="ar_au_msg"></span></div>
+      <div id="ar_au_prog"></div>
+      <div id="ar_au_out"></div>
+    </fieldset>
+  </div>
+
+  <div id="ar-setup" hidden>
+    <div id="offnote-setup" class="offnote" hidden></div>
+    <fieldset id="suitefs-setup" class="arfs">
+      <div class="muted" style="margin-bottom:10px">Installs the Pro AI stack into one Python environment per component under <code class="feat">~/.local/share/cinvar/venvs/</code> and records the helper paths in your config, so nothing is downloaded at render time. Same work as <code class="feat">cinvar setup --pro-ai</code>.</div>
+      <div class="chk" id="ar_su_list"></div>
+      <div class="chk"><label><input type="checkbox" id="ar_su_dl" checked> Allow downloading model weights during the install</label></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><button class="primary" id="ar_su_go">Install selected components</button><span class="muted" id="ar_su_msg"></span></div>
+      <div id="ar_su_table"></div>
+    </fieldset>
+  </div>
+
+  <div id="ar-blender" hidden>
+    <div id="offnote-blender" class="offnote" hidden></div>
+    <fieldset id="suitefs-blender" class="arfs">
+      <div id="ar_bl_stat" style="margin-bottom:10px"></div>
+      <h3>Scene</h3>
+      <div class="grid2">
+        <div class="field"><label>Start from</label><select id="ar_bl_tpl"><option value="logo_reveal">Logo reveal</option><option value="title_3d">3D title</option><option value="empty">Empty scene</option></select></div>
+        <div class="field"><label>Text</label><input id="ar_bl_text" placeholder="CINVAR"></div>
+      </div>
+      <div class="field"><label>Import assets</label><select id="ar_bl_assets" multiple size="3" title="Ctrl-click to pick several"></select></div>
+      <div class="grid2">
+        <div class="field"><label>Camera preset</label><select id="ar_bl_cam"></select></div>
+        <div class="field"><label>Lighting preset</label><select id="ar_bl_light"></select></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px"><button class="primary" id="ar_bl_scene">Create / update scene</button><span class="muted" id="ar_bl_scenemsg"></span></div>
+      <h3>Four-view preview</h3>
+      <div class="views" id="ar_bl_views"></div>
+      <h3>Spatial warnings</h3>
+      <div class="warnlist" id="ar_bl_warn"></div>
+      <h3>Render</h3>
+      <div class="grid3">
+        <div class="field"><label>Width</label><input id="ar_bl_w" type="number" value="1080" min="16" max="8192"></div>
+        <div class="field"><label>Height</label><input id="ar_bl_h" type="number" value="1920" min="16" max="8192"></div>
+        <div class="field"><label>Frame rate</label><input id="ar_bl_fps" type="number" value="30" min="1" max="120"></div>
+        <div class="field"><label>Samples</label><input id="ar_bl_samples" type="number" value="64" min="1" max="4096"></div>
+        <div class="field"><label>Engine</label><select id="ar_bl_engine"><option value="eevee">EEVEE (fast)</option><option value="cycles">Cycles</option></select></div>
+        <div class="field"><label>Device</label><select id="ar_bl_dev"><option value="gpu">GPU</option><option value="cpu">CPU</option></select></div>
+        <div class="field"><label>GPU</label><select id="ar_bl_gpu"></select></div>
+        <div class="field"><label>Worker</label><select id="ar_bl_worker"></select></div>
+        <div class="field"><label>Frames</label><input id="ar_bl_frames" placeholder="all, or 1-240"></div>
+      </div>
+      <div class="chk">
+        <label><input type="checkbox" id="ar_bl_alpha"> Transparent background (alpha overlay for compositing)</label>
+        <label><input type="checkbox" id="ar_bl_resume" checked> Resume an interrupted render instead of starting over</label>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><button class="primary" id="ar_bl_go">Render animation</button><span class="muted" id="ar_bl_msg"></span></div>
+      <div id="ar_bl_prog"></div>
+      <div id="ar_bl_failed"></div>
+    </fieldset>
+  </div>
+
+  </div></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let S={open:false}, sel={asset:null,clip:null}, curJob=null, busy=false, pxs=60;
+let tlId=null,tlCount=0;
+const curTl=()=>{const a=S.timelines||[];return a.find(t=>t.id===tlId)||a[a.length-1]||null};
+const BUILD=(document.querySelector('meta[name=ui-build]')||{}).content||'';
+const LAB=96,PXS_MIN=0.15,PXS_MAX=400;
+// the slider is logarithmic: equal steps are equal zoom ratios, so it is usable from 2 seconds to 2 hours
+const zToPx=v=>Math.exp(Math.log(PXS_MIN)+(Math.log(PXS_MAX)-Math.log(PXS_MIN))*v/1000);
+const pxToZ=p=>1000*(Math.log(p)-Math.log(PXS_MIN))/(Math.log(PXS_MAX)-Math.log(PXS_MIN));
+let fitMode=false; // after Fit, the zoom follows the cut's length until you zoom by hand
+const fitPxs=tl=>Math.max(PXS_MIN,Math.min(PXS_MAX,($('tlscroll').clientWidth-LAB-24)/tlSpan(tl)));
+const tlSpan=tl=>Math.max(+tl.duration||0,1)+2; // drawn length: the cut plus a little room, so Fit and the ruler agree
 
 /* ---------- preferences (stored only in this browser) ---------- */
 const DEF={theme:'midnight',accent:'#38bdf8',fs:13,rad:10,pad:10,showL:true,showR:true,tlh:260,left:290,right:380,sendKey:'enter',showTools:true,autoplay:true};
@@ -293,11 +509,16 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
 function showTab(g,t){document.querySelector(`.tab[data-g=${g}][data-t=${t}]`).click()}
 
 /* ---------- state ---------- */
+function showStale(){$('stale').hidden=false}
+$('staleBtn').onclick=()=>location.reload();
+setInterval(()=>api('/api/status').then(x=>{if(x&&x.ui_build&&BUILD&&x.ui_build!==BUILD)showStale()}).catch(()=>{}),15000);
 async function refresh(){
   const s=await api('/api/status');S=s;
   $('projName').textContent=s.open?s.name:'No project';
   if(!s.open){$('bin').innerHTML='<div class="empty">Open or create a project to begin.</div>';$('tlin').innerHTML='';$('projStat').textContent='';return}
-  const tl=(s.timelines||[])[0];
+  const tls=s.timelines||[];if(tls.length>tlCount&&tlCount>0)tlId=tls[tls.length-1].id;tlCount=tls.length;if(!tls.some(t=>t.id===tlId))tlId=tls.length?tls[tls.length-1].id:null;
+  if(s.ui_build&&BUILD&&s.ui_build!==BUILD)showStale();
+  const tl=curTl();
   $('projStat').textContent=`rev ${s.revision}${tl?` · ${tl.width}×${tl.height} · ${fmt(tl.duration)} · ${tl.clips} clips`:''}${s.issues.length?` · ${s.issues.length} issue(s)`:''}`;
   drawBin();drawTimeline();drawRenders();drawInspector();
 }
@@ -317,25 +538,46 @@ $('bin').onclick=e=>{
 };
 const KCOL={video:'var(--v)',audio:'var(--a)',caption:'var(--c)',overlay:'var(--o)'};
 function drawTimeline(){
-  const tl=(S.timelines||[])[0];
+  const tl=curTl();
   if(!tl){$('tlin').innerHTML='<div class="empty">The timeline is empty. Ask the assistant to build something.</div>';$('tlName').textContent='';return}
-  $('tlName').textContent=tl.name;
-  const W=Math.max(tl.duration+4,10)*pxs+120;
+  const all=S.timelines||[];$('tlSel').hidden=all.length<2;$('tlName').hidden=all.length>=2;
+  $('tlSel').innerHTML=all.map(t=>`<option value="${esc(t.id)}" ${t.id===tl.id?'selected':''}>${esc(t.name)} · ${fmt(t.duration).replace(/\.0$/,'')} · ${t.width}×${t.height}</option>`).join('');
+  $('tlName').textContent=tl.name;$('tlInfo').hidden=all.length>=2;$('tlInfo').textContent=`${tl.width}×${tl.height} · ${fmt(tl.duration).replace(/\.0$/,'')} · ${tl.clips} clip${tl.clips===1?'':'s'}`;
+  if(fitMode){pxs=fitPxs(tl);$('zoom').value=pxToZ(pxs)}
+  const span=tlSpan(tl),W=span*pxs+LAB+24;
   let h=`<div class="ruler" style="width:${W}px">`;
-  const step=pxs>=120?1:pxs>=50?5:pxs>=25?10:30;
-  for(let t=0;t<=tl.duration+4;t+=step)h+=`<i style="left:${96+t*pxs}px"></i><span style="left:${96+t*pxs}px">${fmt(t).replace(/\.0$/,'')}</span>`;
+  const step=[0.5,1,2,5,10,15,30,60,120,300,600,1800,3600].find(x=>x*pxs>=70)||7200;
+  for(let t=0;t<=span;t+=step)h+=`<i style="left:${LAB+t*pxs}px"></i><span style="left:${LAB+t*pxs}px">${fmt(t).replace(/\.0$/,'')}</span>`;
   h+='</div>';
   for(const tr of tl.tracks||[]){
     h+=`<div class="trk" style="width:${W}px"><div class="lab"><span style="width:8px;height:8px;border-radius:50%;background:${KCOL[tr.kind]||'#888'}"></span>${esc(tr.name||tr.kind)}${tr.muted?' 🔇':''}</div>`;
-    for(const c of tr.clips)h+=`<div class="clip kv-${tr.kind} ${sel.clip===c.id?'on':''}" data-clip="${c.id}" style="left:${96+c.start*pxs}px;width:${Math.max(c.duration*pxs,6)}px" title="${esc(c.name)}">${esc(c.name||'clip')}<small>${fmt(c.duration)}${c.speed!==1?' · '+c.speed+'×':''}${c.effects?' · fx '+c.effects:''}</small></div>`;
+    for(const c of tr.clips)h+=`<div class="clip kv-${tr.kind} ${c.text?'ctext':''} ${sel.clip===c.id?'on':''}" data-clip="${c.id}" style="left:${LAB+c.start*pxs}px;width:${Math.max(c.duration*pxs,6)}px" title="${esc(c.name)}">${esc(c.name||'clip')}<small>${fmt(c.duration)}${c.speed!==1?' · '+c.speed+'×':''}${c.effects?' · fx '+c.effects:''}</small></div>`;
     h+='</div>';
   }
   h+='<div class="playhead" id="ph2"></div>';
   $('tlin').style.width=W+'px';$('tlin').innerHTML=h;
 }
 $('tlin').onclick=e=>{const c=e.target.closest('.clip');if(!c)return;sel.clip=c.dataset.clip;drawTimeline();showInspectorClip();showTab('R','insp')};
-$('zoom').oninput=e=>{pxs=+e.target.value;drawTimeline()};
-$('fit').onclick=()=>{const tl=(S.timelines||[])[0];if(!tl)return;pxs=Math.max(10,Math.min(240,($('tlscroll').clientWidth-140)/Math.max(tl.duration,1)));$('zoom').value=pxs;drawTimeline()};
+/* Zoom keeps the time under an anchor point fixed (cursor for Ctrl+scroll, view centre for the slider). */
+function setZoom(next,anchorX){
+  const sc=$('tlscroll');next=Math.max(PXS_MIN,Math.min(PXS_MAX,+next||60));
+  fitMode=false;
+  if(next===pxs)return;
+  const ax=anchorX==null?sc.clientWidth/2:anchorX,t=(sc.scrollLeft+ax-LAB)/pxs;
+  pxs=next;$('zoom').value=pxToZ(pxs);drawTimeline();
+  sc.scrollLeft=Math.max(0,LAB+t*pxs-ax);
+}
+$('zoom').min=0;$('zoom').max=1000;$('zoom').step=1;$('zoom').value=pxToZ(pxs);
+$('zoom').oninput=e=>setZoom(zToPx(+e.target.value));
+$('tlSel').onchange=()=>{tlId=$('tlSel').value;sel.clip=null;drawTimeline();refreshStat()};
+function refreshStat(){const tl=curTl();if(tl)$('projStat').textContent=`rev ${S.revision} · ${tl.width}×${tl.height} · ${fmt(tl.duration)} · ${tl.clips} clips${S.issues&&S.issues.length?` · ${S.issues.length} issue(s)`:''}`}
+$('fit').onclick=()=>{const tl=curTl();if(!tl)return;fitMode=true;drawTimeline();$('tlscroll').scrollLeft=0};
+window.addEventListener('resize',()=>{if(fitMode&&S.open)drawTimeline()});
+$('tlscroll').addEventListener('wheel',e=>{
+  if(!(e.ctrlKey||e.metaKey))return; // plain scroll still scrolls the timeline
+  e.preventDefault();const r=$('tlscroll').getBoundingClientRect();
+  setZoom(pxs*Math.exp(-e.deltaY*0.0015),e.clientX-r.left);
+},{passive:false});
 function drawRenders(){
   const r=S.renders||[];
   $('renders').innerHTML=r.length?r.map(x=>`<div class="it" data-r="${esc(x)}"><span>🎬 ${esc(x)}</span><button class="ghost" data-dl="${esc(x)}">Save</button></div>`).join(''):'<div class="empty">No exports yet. Hit Preview or Export.</div>';
@@ -351,7 +593,7 @@ function showInspectorAsset(a){
   <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap"><button data-q="Add &quot;${esc(a.name)}&quot; to the timeline.">Add to timeline</button><button data-q="Transcribe &quot;${esc(a.name)}&quot; and add captions.">Add captions</button><button data-q="Describe &quot;${esc(a.name)}&quot; and suggest the best moments.">Find best moments</button></div>`;
 }
 function showInspectorClip(){
-  const tl=(S.timelines||[])[0];let c,tk;
+  const tl=curTl();let c,tk;
   for(const t of tl?.tracks||[])for(const x of t.clips)if(x.id===sel.clip){c=x;tk=t}
   if(!c){$('R-insp').innerHTML='<div class="empty">Select a clip on the timeline.</div>';return}
   $('R-insp').innerHTML=`<h3>Clip</h3><dl class="kv"><dt>Name</dt><dd>${esc(c.name)}</dd><dt>Track</dt><dd>${esc(tk.name)} (${tk.kind})</dd><dt>Start</dt><dd>${fmt(c.start)}</dd><dt>Duration</dt><dd>${fmt(c.duration)}</dd><dt>Speed</dt><dd>${c.speed}×</dd><dt>Effects</dt><dd>${c.effects}</dd><dt>ID</dt><dd style="font-family:ui-monospace,monospace;font-size:11px">${esc(c.id)}</dd></dl>
@@ -396,15 +638,23 @@ function logMsg(kind,text,calls){
 function intro(){$('log').innerHTML='';logMsg('sys','Describe what you want. I edit the real project — nothing leaves your machine except calls to the model you choose.');$('sugg').innerHTML=SUGG.map(s=>`<button>${esc(s)}</button>`).join('')}
 $('sugg').onclick=e=>{if(e.target.tagName==='BUTTON'){$('prompt').value=e.target.textContent;send()}};
 $('clear').onclick=intro;
+const pinned=new Set();
+function showSkills(used){
+  const auto=(used||[]).filter(u=>u.auto).map(u=>`<span class="skchip auto" title="${esc(u.reason)}">auto <b>${esc(u.name)}</b></span>`);
+  const pins=[...pinned].map(n=>`<span class="skchip pin">pinned <b>${esc(n)}</b> <button data-unpin="${esc(n)}" title="Unpin">✕</button></span>`);
+  $('skchips').innerHTML=pins.concat(auto).join('');
+}
+$('skchips').onclick=e=>{const b=e.target.closest('[data-unpin]');if(b){pinned.delete(b.dataset.unpin);showSkills([])}};
 async function send(){
   const m=$('prompt').value.trim();if(!m||busy)return;
   if(!S.open){toast('Create or open a project first');open_('mProj');return}
   $('prompt').value='';$('sugg').innerHTML='';logMsg('user',m);
   const w=logMsg('assistant','');w.innerHTML='<span class="dots"><span></span><span></span><span></span></span>';
   busy=true;$('send').disabled=true;
-  const res=await api('/api/chat','POST',{message:m});
+  const res=await api('/api/chat','POST',{message:m,skills:[...pinned]});
   w.remove();busy=false;$('send').disabled=false;
   if(res.error){logMsg('sys','⚠ '+res.error+(/model|key|provider/i.test(res.error)?'\n(Open ⚙ Settings or run `cinvar setup` to configure a model.)':''));return}
+  showSkills(res.skills||[]);
   logMsg('assistant',res.text||'(done)',res.tool_calls);
   refresh();
 }
@@ -416,7 +666,7 @@ $('prompt').addEventListener('keydown',e=>{
 /* ---------- render ---------- */
 async function render(preview){
   if(!S.open)return toast('No project open');
-  const r=await api('/api/render','POST',{preview});
+  const r=await api('/api/render','POST',{preview,timeline_id:(curTl()||{}).id||''});
   if(r.error)return toast('✗ '+r.error,5000);
   curJob=r.job_id;$('pbar').style.display='block';poll();
 }
@@ -447,17 +697,59 @@ async function loadDoctor(){
   const checks=d.checks||d.items||[];
   $('doctor').innerHTML=Array.isArray(checks)&&checks.length?checks.map(c=>`<div>${c.ok||c.status==='ok'?'<span class="badge ok">ok</span>':'<span class="badge bad">'+esc(c.status||'issue')+'</span>'} ${esc(c.name||c.check)} <span class="muted">${esc(c.detail||c.message||'')}</span></div>`).join(''):`<pre style="white-space:pre-wrap;margin:0">${esc(JSON.stringify(d,null,1).slice(0,1500))}</pre>`;
 }
+let H=null;
+function connOpts(sel,cur,allowNone){const on=H.connections.filter(c=>c.connected&&!c.video_only);sel.innerHTML=(allowNone?'<option value="">Same as assistant</option>':'')+on.map(c=>`<option value="${esc(c.provider)}" ${c.provider===cur?'selected':''}>${esc(c.label)}</option>`).join('')||'<option value="">Connect a provider below</option>'}
+function fillModels(sel,provider,cur){const c=H.connections.find(x=>x.provider===provider);const list=((c&&c.models)||[]).slice();if(cur&&!list.includes(cur))list.push(cur);sel.innerHTML=list.map(m=>`<option value="${esc(m)}" ${m===cur?'selected':''}>${esc(m)}</option>`).join('')+'<option value="__custom">Custom model id…</option>'}
 async function loadModels(){
-  const m=await api('/api/models');
-  $('modelSel').innerHTML=(m.models||[]).length?(m.models).map(x=>`<option ${x===m.active?'selected':''}>${esc(x)}</option>`).join(''):'<option value="">No model set up</option>';
-  $('modelNote').textContent=m.active?'':'⚠ run cinvar setup to add a model';
+  H=await api('/api/harness');
+  const as=H.roles.assistant||{},sc=H.roles.script||{};
+  connOpts($('rAsP'),as.provider,false);fillModels($('rAsM'),$('rAsP').value,as.model);
+  for(const [pre,key] of [['Sc','script'],['Bl','blender'],['Mo','motion']]){
+    const r=H.roles[key]||{},def=H.roles[key+'_is_default'];
+    connOpts($('r'+pre+'P'),def?'':r.provider,true);fillModels($('r'+pre+'M'),$('r'+pre+'P').value||as.provider,def?'':r.model);
+    $('r'+pre+'M').disabled=!$('r'+pre+'P').value;
+  }
+  const wf=H.video.workflows,bk=H.video.backends.filter(b=>b.connected),vb=H.roles.video_backend;
+  $('rVid').innerHTML='<option value="">'+(wf.length||bk.length?'None selected':'Nothing available: add a video key below or set up ComfyUI')+'</option>'
+    +(bk.length?'<optgroup label="Hosted (paid)">'+bk.flatMap(b=>b.models.map(m=>`<option value="bk|${esc(b.backend)}|${esc(m)}" ${vb&&vb.provider===b.backend&&vb.model===m?'selected':''}>${esc(b.label)} · ${esc(m)}</option>`)).join('')+'</optgroup>':'')
+    +(wf.length?'<optgroup label="Local ComfyUI (free)">'+wf.map(w=>`<option value="wf|${esc(w.name)}" ${w.name===H.roles.video_workflow?'selected':''}>${esc(w.name)} · ${esc(w.task)}</option>`).join('')+'</optgroup>':'');
+  const vs=H.video.settings;$('vgOn').checked=vs.enabled;$('vgJob').value=vs.max_job_seconds;$('vgDay').value=vs.max_day_seconds;$('vgUsed').textContent=`used today: ${vs.used_today_seconds}s`;
+  $('autoSk').checked=H.roles.auto_skills!==false;
+  $('conns').innerHTML=H.connections.map(c=>`<div class="conn" data-p="${esc(c.provider)}"><div><span class="dot ${c.connected?'on':''}"></span><span class="nm">${esc(c.label)}</span> <span class="muted">${c.kind==='cli'?(c.connected?'signed in':'not signed in'):c.connected?(c.kind==='url'?'configured':'key saved'):'not connected'}</span></div><div><button class="ghost" data-a="edit">${c.connected?'Change':'Connect'}</button>${c.connected?' <button class="ghost" data-a="test">Test</button> <button class="ghost" data-a="rm">Remove</button>':(c.kind==='cli'?' <button class="ghost" data-a="test">Check</button>':'')}</div><div class="edit">${c.kind==='key'?'<input type="password" data-f="key" placeholder="API key" autocomplete="off" spellcheck="false">':c.kind==='url'?`<input data-f="url" placeholder="http://localhost:11434/v1" value="${esc(c.base_url||'')}">`:'<span class="muted">Uses your signed-in Claude Code. Run <code>claude auth login</code> in a terminal if needed.</span>'}${c.kind==='cli'?'':'<button class="primary" data-a="save">Save</button>'}${c.kind==='cli'?'<button class="primary" data-a="save">Enable</button>':''}</div></div>`).join('');
+  // header assistant picker
+  const on=H.connections.filter(c=>c.connected&&!c.video_only);
+  $('modelSel').innerHTML=on.length?on.map(c=>{const sel=c.provider===as.provider;return `<option value="${esc(c.provider)}" ${sel?'selected':''}>${esc(c.label)}${sel&&as.model&&as.model!=='default'?' · '+esc(as.model):''}</option>`}).join(''):'<option value="">No model connected</option>';
+  $('modelNote').textContent=on.length?'':'⚠ connect a model in ⚙ Settings';
 }
+function pickModel(role,pSel,mSel){let m=$(mSel).value;if(m==='__custom'){m=(prompt('Model id (exactly as the provider names it):')||'').trim();if(!m){loadModels();return}}setRole(role,$(pSel).value,m)}
+async function setRole(role,provider,model){const r=await api('/api/roles','POST',{role,provider,model});$('roleMsg').textContent=r.error?('✗ '+r.error):'Saved';await loadModels()}
+$('rAsP').onchange=()=>{const c=H.connections.find(x=>x.provider===$('rAsP').value);setRole('assistant',$('rAsP').value,(c&&c.models[0])||'')};
+$('rAsM').onchange=()=>pickModel('assistant','rAsP','rAsM');
+for(const [pre,key] of [['Sc','script'],['Bl','blender'],['Mo','motion']]){
+  $('r'+pre+'P').onchange=()=>{const v=$('r'+pre+'P').value;const c=H.connections.find(x=>x.provider===v);setRole(key,v,v?((c&&c.models[0])||''):'')};
+  $('r'+pre+'M').onchange=()=>pickModel(key,'r'+pre+'P','r'+pre+'M');
+}
+$('rVid').onchange=async()=>{const v=$('rVid').value.split('|');const body=v[0]==='bk'?{role:'video',backend:v[1],model:v.slice(2).join('|')}:{role:'video',workflow:v[0]==='wf'?v.slice(1).join('|'):''};await api('/api/roles','POST',body);$('roleMsg').textContent='Saved';loadModels()};
+const vgSave=async()=>{await api('/api/videogen/settings','POST',{enabled:$('vgOn').checked,max_job_seconds:+$('vgJob').value||8,max_day_seconds:+$('vgDay').value||40});$('roleMsg').textContent='Saved';loadModels()};
+for(const id of ['vgOn','vgJob','vgDay'])$(id).onchange=vgSave;
+$('autoSk').onchange=async()=>{await api('/api/auto_skills','POST',{enabled:$('autoSk').checked});$('roleMsg').textContent='Saved'};
+$('modelSel').onchange=()=>{const c=H.connections.find(x=>x.provider===$('modelSel').value);setRole('assistant',$('modelSel').value,(c&&c.models[0])||'')};
+$('conns').onclick=async e=>{
+  const b=e.target.closest('button[data-a]');if(!b)return;const row=b.closest('.conn'),p=row.dataset.p,a=b.dataset.a;
+  if(a==='edit'){row.classList.toggle('open');return}
+  if(a==='save'){const k=row.querySelector('[data-f=key]'),u=row.querySelector('[data-f=url]');const r=await api('/api/connections','POST',{provider:p,api_key:k?k.value.trim():'',base_url:u?u.value.trim():''});if(k)k.value='';if(r.error){toast('✗ '+r.error);return}
+    const t=await api('/api/models/test','POST',{name:p});toast((t.ok?'✓ ':'✗ ')+t.message);await loadModels();
+    if(t.ok&&!H.roles.assistant.provider)setRole('assistant',p,(H.connections.find(x=>x.provider===p).models[0])||'');return}
+  if(a==='test'){toast('Testing…');const t=H.connections.find(x=>x.provider===p).connected||p!=='claude-cli'?await api('/api/models/test','POST',{name:p}):{ok:false,message:'Not signed in. Run: claude auth login'};toast((t.ok?'✓ ':'✗ ')+t.message);loadModels();return}
+  if(a==='rm'&&confirm('Remove this connection and its saved key?')){await api('/api/connections/remove','POST',{provider:p});loadModels()}
+};
+$('modelNote').onclick=()=>$('btnSet').click();
 $('modelSel').onchange=async e=>{if(!e.target.value)return;const r=await api('/api/model','POST',{name:e.target.value});toast(r.error?('✗ '+r.error):('Model: '+r.active))};
 async function loadSkills(){
   const s=await api('/api/skills');
   $('skills').innerHTML=(s||[]).map(x=>`<div class="it" data-s="${esc(x.name)}" title="${esc(x.summary||'')}"><span><b>${esc(x.title||x.name)}</b><br><small class="muted">${esc(x.summary||'')}</small></span></div>`).join('')||'<div class="empty">No skills installed.</div>';
 }
-$('skills').onclick=e=>{const it=e.target.closest('[data-s]');if(it){showTab('R','chat');$('prompt').value=`Use the "${it.dataset.s}" skill on my project.`;$('prompt').focus()}};
+$('skills').onclick=e=>{const it=e.target.closest('[data-s]');if(it){const n=it.dataset.s;pinned.has(n)?pinned.delete(n):pinned.add(n);showSkills([]);showTab('R','chat');toast(pinned.has(n)?`Pinned “${n}”: it is used on every request until you unpin it`:`Unpinned “${n}”`);$('prompt').focus()}};
 
 /* ---------- resizers ---------- */
 function drag(el,fn){el.addEventListener('mousedown',e=>{e.preventDefault();const mv=ev=>fn(ev),up=()=>{removeEventListener('mousemove',mv);removeEventListener('mouseup',up);savePrefs()};addEventListener('mousemove',mv);addEventListener('mouseup',up)})}
@@ -497,6 +789,372 @@ addEventListener('keydown',e=>{
 applyPrefs();intro();
 refresh().then(()=>{if(!S.open)open_('mProj')});loadModels();loadSkills();
 setInterval(()=>{if(!busy&&!document.hidden)refresh()},5000);
+
+/* ---------- edition, license and Pro panels ---------- */
+let ED={edition:'free',catalog:[]};
+const capOf=c=>(ED.catalog||[]).find(x=>x.capability===c)||{unlocked:false};
+const tool=(name,args)=>api('/api/tool','POST',{name,args:args||{}});
+function lockBox(cap,el){const c=capOf(cap);el.innerHTML=c.unlocked?'':`<div class="lockbox"><b>${esc(c.title||cap)}</b><span class="probadge">PRO</span><div class="muted" style="margin:4px 0 8px">${esc(c.description||'')}</div><div style="font-size:12px;margin-bottom:8px">${esc(c.reason||'')}</div><button data-up>Upgrade to Pro ↗</button> <button data-goto-lic>Enter a license</button></div>`;return c.unlocked}
+async function loadEdition(){
+  ED=await api('/api/edition');const pro=ED.edition==='pro';
+  $('edBadge').textContent=pro?'PRO':'FREE';$('edBadge').classList.toggle('pro',pro);$('pe_title').textContent=pro?'Pro':'Free';
+  const src=ED.source||{};let lic='no license installed';
+  if(src.kind==='license')lic=`Pro license ${src.id}${src.grandfathered?' (existing customer)':''} - perpetual`;
+  else if(src.kind==='rejected')lic='license file rejected: '+src.reason;
+  $('pe_status').innerHTML=`<b>CINVAR ${pro?'Pro':'Free'}</b> &middot; export limit: ${esc(ED.export_limit)} &middot; ${esc(lic)}${ED.pro_module?'':' &middot; Pro module: not in this download'}<br>Free is free forever: no watermark, no export-count limit, no account.`;
+  renderLicFeats();
+  $('pe_catalog').innerHTML=(ED.catalog||[]).map(c=>`<div class="lockrow"><div><b>${esc(c.title)}</b><span class="probadge ${c.experimental?'exp':''}">${c.experimental?'PRO · EXPERIMENTAL':'PRO'}</span></div><div class="d">${esc(c.description)}</div><div class="s ${c.unlocked?'st-succeeded':''}">${c.unlocked?'✓ Unlocked':'🔒 Locked'}</div></div>`).join('');
+}
+function openPro(tab){loadEdition().then(()=>{refreshPro();open_('mPro');if(tab)showTab('pro',tab)})}
+$('btnEd').onclick=()=>openPro();
+document.addEventListener('click',e=>{if(e.target.closest('[data-up]'))window.open(ED.upgrade_url||'https://elyraon.com.co/cinvar/','_blank','noopener');if(e.target.closest('[data-goto-lic]'))showTab('pro','edition')});
+$('pe_up').onclick=()=>window.open(ED.upgrade_url,'_blank','noopener');
+$('pe_pick').onclick=()=>$('pe_file').click();
+$('pe_file').onchange=async e=>{const f=e.target.files[0];if(f)$('pe_lic').value=await f.text()};
+$('pe_act').onclick=async()=>{const r=await api('/api/license','POST',{license:$('pe_lic').value});if(r.error){$('pe_msg').textContent='Not activated: '+r.error;return}$('pe_lic').value='';$('pe_msg').textContent='';toast('License activated');ED=r;await loadEdition();refreshPro()};
+$('pe_rm').onclick=async()=>{await api('/api/license/remove','POST',{});toast('License removed');await loadEdition();refreshPro()};
+async function refreshPro(){
+  const batch=lockBox('render.batch',$('pb_lock'));$('pb_box').classList.toggle('locked',!batch);
+  const pre=lockBox('export.presets',$('pp_lock'));$('pp_box').classList.toggle('locked',!pre);
+  const col=lockBox('color.advanced',$('pc_lock'));$('pc_box').classList.toggle('locked',!col);
+  if(pre||batch)await loadPresets();
+  if(col)await loadGradePresets();
+  buildColorUi();renderRows();
+}
+/* presets */
+let PRESETS=[];
+async function loadPresets(){const r=await tool('cinvar.preset.list');PRESETS=r.presets||[];
+  $('pp_list').innerHTML=PRESETS.map(e=>{const p=e.preset;return `<div class="lockrow"><div><b>${esc(p.name)}</b>${e.builtin?'<span class="probadge">BUILT-IN</span>':''}</div><div class="d">${esc(p.description||'')} ${p.width?`${p.width}x${p.height} `:''}${esc(p.codec||'')} ${p.bitrate?esc(p.bitrate):(p.crf!=null?'crf '+p.crf:'')} ${esc(p.format||'')} ${p.fps?esc(p.fps)+'fps':''}</div>${e.builtin?'':`<div class="s"><button data-delp="${esc(p.name)}">Delete</button></div>`}</div>`}).join('');
+  renderRows()}
+$('pp_list').onclick=async e=>{const n=e.target.dataset.delp;if(n){const r=await tool('cinvar.preset.delete',{name:n});if(r.error)toast(r.error);await loadPresets()}};
+$('pp_save').onclick=async()=>{const num=id=>$(id).value===''?undefined:+$(id).value,str=id=>$(id).value===''?undefined:$(id).value;
+  const preset={name:$('pp_name').value,width:num('pp_w'),height:num('pp_h'),fps:str('pp_fps'),codec:str('pp_codec'),format:str('pp_fmt'),bitrate:str('pp_br'),crf:num('pp_crf'),bit_depth:num('pp_bd')};
+  Object.keys(preset).forEach(k=>preset[k]===undefined&&delete preset[k]);
+  const r=await tool('cinvar.preset.save',{preset});$('pp_msg').textContent=r.error?r.error:'Saved '+r.saved;if(!r.error)loadPresets()};
+/* batch */
+let ROWS=[{output:'renders/export-1.mp4',preset:'youtube-1080p',w:'',h:''}],BATCH=null,BT=null;
+function renderRows(){$('pb_rows').innerHTML=ROWS.map((r,i)=>`<div class="grid3" style="grid-template-columns:2fr 1.4fr .7fr .7fr auto;margin-bottom:6px;align-items:end"><div class="field"><label>Output file</label><input data-r="${i}" data-k="output" value="${esc(r.output)}"></div><div class="field"><label>Preset</label><select data-r="${i}" data-k="preset"><option value="">(none)</option>${PRESETS.map(e=>`<option ${e.preset.name===r.preset?'selected':''}>${esc(e.preset.name)}</option>`).join('')}</select></div><div class="field"><label>Width</label><input type="number" data-r="${i}" data-k="w" value="${esc(r.w)}"></div><div class="field"><label>Height</label><input type="number" data-r="${i}" data-k="h" value="${esc(r.h)}"></div><button class="ghost" data-rm="${i}">✕</button></div>`).join('')}
+$('pb_rows').oninput=e=>{const i=e.target.dataset.r;if(i!=null)ROWS[+i][e.target.dataset.k]=e.target.value};
+$('pb_rows').onclick=e=>{const i=e.target.dataset.rm;if(i!=null){ROWS.splice(+i,1);renderRows()}};
+$('pb_add').onclick=()=>{ROWS.push({output:`renders/export-${ROWS.length+1}.mp4`,preset:'',w:'',h:''});renderRows()};
+$('pb_go').onclick=async()=>{
+  if(!S.open)return toast('Open a project first');
+  const items=ROWS.map(r=>{const it={output:r.output};if(r.preset)it.preset=r.preset;if(r.w)it.width=+r.w;if(r.h)it.height=+r.h;return it});
+  const r=await tool('cinvar.render.batch_start',{items});if(r.error){$('pb_out').innerHTML=`<div class="st-failed">${esc(r.error)}</div>`;return}
+  BATCH=r.batch_id;$('pb_cancel').disabled=false;pollBatch()};
+$('pb_cancel').onclick=async()=>{if(BATCH)await tool('cinvar.render.batch_cancel',{batch_id:BATCH})};
+async function pollBatch(){clearTimeout(BT);if(!BATCH)return;const s=await tool('cinvar.render.batch_status',{batch_id:BATCH});if(s.error){$('pb_out').textContent=s.error;return}
+  $('pb_out').innerHTML=`<div style="margin:6px 0">Batch ${esc(s.id)}: <b class="st-${esc(s.state)}">${esc(s.state)}</b></div><table class="btable"><tr><th>#</th><th>Output</th><th>State</th><th>Size</th><th>Detail</th></tr>${s.items.map(i=>`<tr><td>${i.index+1}</td><td>${esc(String(i.output).split('/').pop())}</td><td class="st-${esc(i.state)}">${esc(i.state)}</td><td>${i.width?`${i.width}x${i.height}`:''}</td><td>${esc(i.error||(i.bytes?Math.round(i.bytes/1024)+' KB':''))}</td></tr>`).join('')}</table>`;
+  if(['queued','running'].includes(s.state))BT=setTimeout(pollBatch,700);else{$('pb_cancel').disabled=true;refresh()}}
+/* color */
+const SL=[['exposure','Exposure (EV)',-4,4,.05,0],['temperature','Temperature (K)',2000,12000,50,6500],['tint','Tint',-1,1,.02,0],['contrast','Contrast',0,4,.02,1],['saturation','Saturation',0,4,.02,1],['gamma','Gamma',.1,10,.02,1],['brightness','Brightness',-1,1,.02,0]];
+const CURVES=['none','increase_contrast','strong_contrast','medium_contrast','linear_contrast','lighter','darker','vintage','cross_process','negative','color_negative'];
+function buildColorUi(){
+  if(!$('pc_sliders').dataset.built){$('pc_sliders').dataset.built=1;
+    $('pc_sliders').innerHTML=SL.map(([k,l,mn,mx,st,df])=>`<div class="field"><label>${l} <span id="pcv_${k}" class="muted">${df}</span></label><input type="range" id="pcs_${k}" min="${mn}" max="${mx}" step="${st}" value="${df}"></div>`).join('');
+    SL.forEach(([k])=>$('pcs_'+k).oninput=e=>$('pcv_'+k).textContent=e.target.value);
+    $('pc_curve').innerHTML=CURVES.map(c=>`<option>${c}</option>`).join('')}
+  const clips=[];for(const t of (curTl()||{}).tracks||[])if(t.kind==='video'||t.kind==='overlay')for(const c of t.clips)clips.push(c);
+  const cur=$('pc_target').value;$('pc_target').innerHTML='<option value="all">All clips on the timeline</option>'+clips.map(c=>`<option value="${esc(c.id)}">${esc(c.name||c.id)}</option>`).join('');if(cur)$('pc_target').value=cur}
+function gradeFromUi(){const g={};for(const [k,,,,,df] of SL){const v=+$('pcs_'+k).value;if(Math.abs(v-df)>1e-9)g[k]=v}const c=$('pc_curve').value;if(c!=='none')g.curves_preset=c;return g}
+function target(){const t=$('pc_target').value;return t==='all'?{all:true}:{clip_id:t}}
+$('pc_reset').onclick=()=>{SL.forEach(([k,,,,,df])=>{$('pcs_'+k).value=df;$('pcv_'+k).textContent=df});$('pc_curve').value='none'};
+$('pc_apply').onclick=async()=>{const r=await tool('cinvar.color.grade',{...target(),grade:gradeFromUi()});$('pc_msg').textContent=r.error||`Applied to ${r.clips.length} clip(s). Press Preview to see it.`;if(!r.error)refresh()};
+$('pc_clear').onclick=async()=>{const r=await tool('cinvar.color.grade',{...target(),clear:true});$('pc_msg').textContent=r.error||'Grade removed';if(!r.error)refresh()};
+async function loadGradePresets(){const r=await tool('cinvar.color.grade_preset_list');$('pc_plist').innerHTML=(r.presets||[]).map(p=>`<option>${esc(p.name)}</option>`).join('')}
+$('pc_psave').onclick=async()=>{const r=await tool('cinvar.color.grade_preset_save',{name:$('pc_pname').value,grade:gradeFromUi()});$('pc_msg').textContent=r.error||'Saved '+r.saved;if(!r.error)loadGradePresets()};
+$('pc_papply').onclick=async()=>{const n=$('pc_plist').value;if(!n)return;const r=await tool('cinvar.color.grade_preset_apply',{name:n,...target()});$('pc_msg').textContent=r.error||`Applied "${n}" to ${r.clips.length} clip(s)`;if(!r.error)refresh()};
+/* ---------- production suite: Shorts, captions, audio, AI setup, Blender ----------
+   Every control here is bound to a real relative endpoint. A feature whose endpoint the
+   running server does not implement answers 404 {"error":"unknown route"}; it is then
+   disabled and names the missing method and path. Nothing below invents progress, files or
+   previews: an empty state says what is missing. Contract per endpoint: web/STUDIO_ENDPOINTS.md */
+const SUITE_API={shorts:'/api/shorts',caps:'/api/captions/style',audio:'/api/audio/enhance',setup:'/api/setup/pro-ai',blender:'/api/blender/preview'};
+const AV={};
+const openSuite=()=>$('mAr').classList.contains('on');
+const base=p=>String(p||'').split('/').pop();
+async function ep(path,method,body){
+  try{
+    const r=await fetch(path,{method:method||'GET',headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+    let j=null;try{j=await r.json()}catch{}
+    if(r.status===404&&j&&j.error==='unknown route')return{missing:true,error:(method||'GET')+' '+path+' is not implemented by this server'};
+    if(!j)return{error:'unreadable response (HTTP '+r.status+')'};
+    if(r.status>=400&&!j.error)j.error='HTTP '+r.status;
+    return j;
+  }catch(err){return{error:'request failed: '+err.message}}
+}
+function notAvail(target,method,path,extra){
+  const el=typeof target==='string'?$(target):target;if(!el)return;
+  el.innerHTML='<b>Not available in this build.</b> This needs <code>'+esc(method+' '+path)+'</code>, which the local server does not implement yet.'+(extra?' '+esc(extra):'');
+}
+function setAv(feat,ok){
+  AV[feat]=ok;
+  const off=$('offnote-'+feat),fs=$('suitefs-'+feat);
+  if(off){off.hidden=ok;if(!ok)notAvail(off,'GET',SUITE_API[feat],'Until that endpoint exists these controls stay disabled, so nothing here can show simulated results.')}
+  if(fs)fs.classList.toggle('locked',!ok);
+}
+const progBar=(p,txt)=>{const pc=Math.max(0,Math.min(100,Math.round((+p||0)*100)));return `<div class="prog"><div class="bar"><i style="width:${pc}%"></i></div><span class="muted">${esc(txt)}</span></div>`};
+function download(u){if(!u)return;const a=document.createElement('a');a.href=u;a.download='';a.click()}
+
+/* ---- shorts ---- */
+let SH=null,SHT=null;
+const shortsRun=()=>{const a=(SH&&SH.runs)||[];return SH&&SH.id?a.find(r=>r.id===SH.id)||a[0]:a[0]};
+function fillShortsSrc(){
+  const sel=$('ar_sh_src');if(!sel)return;const cur=sel.value;
+  const a=((S&&S.assets)||[]).filter(x=>x.kind==='video'||x.kind==='audio');
+  sel.innerHTML=a.length?a.map(x=>`<option value="${esc(x.id)}" ${x.id===cur?'selected':''}>${esc(nice(x.name))}${x.seconds?' · '+fmt(x.seconds):''}</option>`).join(''):'<option value="">Import a long recording first</option>';
+}
+async function loadShorts(){
+  const r=await ep('/api/shorts','GET');
+  setAv('shorts',!r.missing);
+  if(r.missing){SH=null;$('ar_sh_prog').innerHTML='';$('ar_sh_out').innerHTML='';$('ar_sh_msg').textContent='';return}
+  SH=r;fillShortsSrc();drawShorts();
+  const st=(shortsRun()||{}).state||'';
+  if(['queued','running'].includes(st)&&openSuite()){clearTimeout(SHT);SHT=setTimeout(loadShorts,900)}
+}
+function drawShorts(){
+  const run=shortsRun();
+  $('ar_sh_prog').innerHTML=run&&run.state?progBar(run.progress,run.state+' · '+Math.round((run.progress||0)*100)+'%'+(run.count?' · '+run.count+' short(s)':'')):'';
+  $('ar_sh_msg').textContent=run&&run.error?'✗ '+run.error:'';
+  const outs=(run&&run.outputs)||[];
+  $('ar_sh_out').innerHTML=outs.length?'<h3>Finished files</h3><table class="btable"><tr><th>#</th><th>File</th><th>Length</th><th>Frame</th><th>QA</th><th></th></tr>'+outs.map(o=>{
+    const nm=base(o.path||o.name);
+    return `<tr><td>${o.index!=null?o.index:''}</td><td>${esc(nm)}</td><td>${o.seconds?fmt(o.seconds):'—'}</td><td>${o.width?o.width+'×'+o.height:'—'}</td><td>${o.qa_passed===true?'<span class="badge ok">pass</span>':o.qa_passed===false?'<span class="badge bad">check</span>':'—'}</td><td>${o.url?'<button class="ghost" data-dl-url="'+esc(o.url)+'">Save</button>':'<span class="muted">—</span>'}</td></tr>`}).join('')+'</table>':'';
+}
+$('ar_sh_go').onclick=async()=>{
+  const src=$('ar_sh_src').value;
+  if(!src)return toast('Import a long recording first');
+  const body={source:src,count:+$('ar_sh_n').value||3,min_seconds:+$('ar_sh_min').value||20,max_seconds:+$('ar_sh_max').value||60,vocab:$('ar_sh_vocab').value.split(',').map(s=>s.trim()).filter(Boolean)};
+  const d=$('ar_sh_dir').value.trim();if(d)body.output_dir=d;
+  $('ar_sh_msg').textContent='Starting…';
+  const r=await ep('/api/shorts','POST',body);
+  if(r.missing)return notAvail('ar_sh_msg','POST','/api/shorts');
+  if(r.error)return $('ar_sh_msg').textContent='✗ '+r.error;
+  SH=SH||{runs:[]};SH.id=r.run_id||r.id||null;$('ar_sh_msg').textContent='';
+  loadShorts();
+};
+
+/* ---- captions ---- */
+let CAP=null;
+const CAPPOS=[['bottom','Bottom'],['lower_third','Lower third'],['center','Centre'],['top','Top']];
+const CAPMODES=[['line','One line at a time'],['word','Word-level highlight'],['karaoke','Karaoke (animated per word)']];
+$('ar_cap_mode').innerHTML=CAPMODES.map(m=>`<option value="${m[0]}">${esc(m[1])}</option>`).join('');
+$('ar_cap_pos').innerHTML=CAPPOS.map(m=>`<option value="${m[0]}">${esc(m[1])}</option>`).join('');
+$('ar_cap_size').oninput=()=>$('ar_cap_sizev').textContent=$('ar_cap_size').value+'px';
+$('ar_cap_sizev').textContent=$('ar_cap_size').value+'px';
+async function loadCaps(){
+  const r=await ep('/api/captions/style','GET');
+  setAv('caps',!r.missing);
+  if(r.missing){CAP=null;return}
+  CAP=r;drawCaps();
+}
+function capStyle(){
+  const st={size:+$('ar_cap_size').value,color:$('ar_cap_color').value,background:$('ar_cap_bg').value.trim(),uppercase:$('ar_cap_upper').checked,position:$('ar_cap_pos').value};
+  if(!st.background)delete st.background;
+  return st;
+}
+function drawCaps(){
+  const a=(CAP&&CAP.active)||{},pr=(CAP&&CAP.presets)||[];
+  $('ar_cap_preset').innerHTML='<option value="">(current style)</option>'+pr.map(p=>`<option value="${esc(p.name)}" ${p.active?'selected':''}>${esc(p.name)}${p.builtin?' · built-in':''}</option>`).join('');
+  lockBox('captions.word_level',$('ar_cap_wl'));
+  if(!CAP)return;
+  $('ar_cap_mode').value=CAP.mode||'line';
+  if(a.size)$('ar_cap_size').value=a.size;
+  if(a.color&&/^#[0-9a-fA-F]{6}$/.test(a.color))$('ar_cap_color').value=a.color;
+  if(a.background!=null)$('ar_cap_bg').value=a.background;
+  if(a.uppercase!=null)$('ar_cap_upper').checked=!!a.uppercase;
+  if(a.position)$('ar_cap_pos').value=a.position;
+  $('ar_cap_sizev').textContent=$('ar_cap_size').value+'px';
+}
+$('ar_cap_preset').onchange=()=>{const p=((CAP&&CAP.presets)||[]).find(x=>x.name===$('ar_cap_preset').value);if(!p||!p.style)return;
+  if(p.style.size)$('ar_cap_size').value=p.style.size;
+  if(p.style.color&&/^#[0-9a-fA-F]{6}$/.test(p.style.color))$('ar_cap_color').value=p.style.color;
+  if(p.style.background!=null)$('ar_cap_bg').value=p.style.background;
+  if(p.style.uppercase!=null)$('ar_cap_upper').checked=!!p.style.uppercase;
+  if(p.style.position)$('ar_cap_pos').value=p.style.position;
+  $('ar_cap_sizev').textContent=$('ar_cap_size').value+'px'};
+$('ar_cap_apply').onclick=async()=>{
+  const body=capStyle();body.mode=$('ar_cap_mode').value;
+  const r=await ep('/api/captions/style','POST',body);
+  if(r.missing)return notAvail('ar_cap_msg','POST','/api/captions/style');
+  $('ar_cap_msg').textContent=r.error?'✗ '+r.error:'Applied';
+  if(!r.error)refresh();
+};
+$('ar_cap_save').onclick=async()=>{
+  const name=$('ar_cap_savename').value.trim();
+  if(!name)return toast('Name the preset first');
+  const r=await ep('/api/captions/style/preset','POST',{name,style:capStyle()});
+  if(r.missing)return notAvail('ar_cap_msg','POST','/api/captions/style/preset');
+  $('ar_cap_msg').textContent=r.error?'✗ '+r.error:'Saved preset '+name;
+  if(!r.error){$('ar_cap_savename').value='';loadCaps()}
+};
+$('ar_cap_trans').onclick=async()=>{
+  if(!sel.clip)return toast('Select a clip on the timeline first');
+  const r=await ep('/api/captions/word_level','POST',{clip_id:sel.clip,mode:$('ar_cap_mode').value});
+  if(r.missing)return notAvail('ar_cap_msg','POST','/api/captions/word_level');
+  $('ar_cap_msg').textContent=r.error?'✗ '+r.error:('Transcribed '+(r.words!=null?r.words+' word(s)':'clip'));
+  if(!r.error)refresh();
+};
+
+/* ---- audio ---- */
+let AU=null,AUT=null;
+function fillAudioSrc(){
+  const sel=$('ar_au_src');if(!sel)return;const cur=sel.value;
+  const a=((S&&S.assets)||[]).filter(x=>x.kind==='audio'||x.kind==='video');
+  sel.innerHTML=a.length?a.map(x=>`<option value="${esc(x.id)}" ${x.id===cur?'selected':''}>${esc(nice(x.name))}${x.kind==='video'?' (audio of the video)':''}</option>`).join(''):'<option value="">Import audio first</option>';
+}
+async function loadAudio(){
+  const r=await ep('/api/audio/enhance','GET');
+  setAv('audio',!r.missing);
+  if(r.missing){AU=null;$('ar_au_prog').innerHTML='';$('ar_au_out').innerHTML='';return}
+  AU=r;fillAudioSrc();drawAudio();
+  if(['queued','running'].includes((AU.state||''))&&openSuite()){clearTimeout(AUT);AUT=setTimeout(loadAudio,900)}
+}
+function drawAudio(){
+  const st=(AU&&AU.state)||'',pr=(AU&&AU.progress)||0;
+  $('ar_au_prog').innerHTML=st&&st!=='idle'?progBar(pr,st+' · '+Math.round(pr*100)+'%'):'';
+  $('ar_au_msg').textContent=AU&&AU.error?'✗ '+AU.error:'';
+  const stems=(AU&&AU.stems)||[],mix=AU&&AU.mix;
+  const rows=stems.map(s=>`<div class="it"><span>${esc(s.name)}</span>${s.url?'<button class="ghost" data-dl-url="'+esc(s.url)+'">Save</button>':'<span class="muted">no file</span>'}</div>`).join('');
+  $('ar_au_out').innerHTML=(stems.length||mix)?'<h3>Result</h3><div class="list">'+rows+(mix?`<div class="it"><span><b>clean mix</b> ${esc(mix.note||'music ducked under speech')}</span>${mix.url?'<button class="ghost" data-dl-url="'+esc(mix.url)+'">Save</button>':'<span class="muted">no file</span>'}</div>`:'')+'</div>':'';
+}
+$('ar_au_db').oninput=()=>$('ar_au_dbv').textContent=$('ar_au_db').value+' dB';
+$('ar_au_go').onclick=async()=>{
+  const src=$('ar_au_src').value;
+  if(!src)return toast('Import audio first');
+  const body={source:src,stems:$('ar_au_stems').checked,mix:$('ar_au_duck').checked,duck_db:+$('ar_au_db').value,denoise:$('ar_au_dn').checked,model:$('ar_au_model').value};
+  $('ar_au_msg').textContent='Starting…';
+  const r=await ep('/api/audio/enhance','POST',body);
+  if(r.missing)return notAvail('ar_au_msg','POST','/api/audio/enhance');
+  if(r.error)return $('ar_au_msg').textContent='✗ '+r.error;
+  $('ar_au_msg').textContent='';loadAudio();
+};
+
+/* ---- AI setup ---- */
+const SU_COMPONENTS=[['whisperx','WhisperX','word-level timings for captions'],['faster-whisper','Faster-Whisper','fast transcription'],['realesrgan','Real-ESRGAN','video upscaling'],['demucs','Demucs','audio stems and clean mixes']];
+let SU=null,SUT=null;
+$('ar_su_list').innerHTML=SU_COMPONENTS.map(c=>`<label><input type="checkbox" data-comp="${c[0]}" checked> <b>${esc(c[1])}</b> <span class="muted">${esc(c[2])}</span></label>`).join('');
+async function loadSetup(){
+  const r=await ep('/api/setup/pro-ai','GET');
+  setAv('setup',!r.missing);
+  if(r.missing){SU=null;$('ar_su_table').innerHTML='';return}
+  SU=r;drawSetup();
+  const busy=((SU.components)||[]).some(c=>['queued','running'].includes(c.state));
+  if(busy&&openSuite()){clearTimeout(SUT);SUT=setTimeout(loadSetup,1200)}
+}
+function drawSetup(){
+  const got=(SU&&SU.components)||[];
+  $('ar_su_msg').textContent=SU&&SU.error?'✗ '+SU.error:'';
+  $('ar_su_table').innerHTML=got.length?'<table class="btable"><tr><th>Component</th><th>State</th><th>Progress</th><th>Detail</th></tr>'+got.map(c=>`<tr><td>${esc(c.label||c.id)}</td><td class="st-${esc(c.state||'')}">${esc(c.state||'')}</td><td>${Math.round((c.progress||0)*100)}%</td><td class="muted">${esc(c.detail||'')}</td></tr>`).join('')+'</table>'+(SU&&SU.venv_dir?`<div class="muted" style="font-size:12px;margin-top:6px">Environments: <code class="feat">${esc(SU.venv_dir)}</code></div>`:''):'';
+}
+$('ar_su_go').onclick=async()=>{
+  const comps=[...document.querySelectorAll('#ar_su_list input[data-comp]')].filter(i=>i.checked).map(i=>i.dataset.comp);
+  if(!comps.length)return toast('Pick at least one component');
+  $('ar_su_msg').textContent='Installing…';
+  const r=await ep('/api/setup/pro-ai','POST',{components:comps,allow_download:$('ar_su_dl').checked});
+  if(r.missing)return notAvail('ar_su_msg','POST','/api/setup/pro-ai');
+  if(r.error)return $('ar_su_msg').textContent='✗ '+r.error;
+  $('ar_su_msg').textContent='';loadSetup();
+};
+
+/* ---- blender ---- */
+const BL_VIEWS=[['front','Front'],['side','Side'],['persp','Perspective'],['top','Top']];
+const BL_CAMS=[['orbit','Orbit (slow arc)'],['dolly_in','Dolly in'],['static','Locked off'],['handheld','Handheld drift']];
+const BL_LIGHTS=[['studio','Three-point studio'],['softbox','Soft key and fill'],['rim','Sunset rim'],['night','Low-key night']];
+let BL=null,BLT=null;
+$('ar_bl_cam').innerHTML=BL_CAMS.map(c=>`<option value="${c[0]}">${esc(c[1])}</option>`).join('');
+$('ar_bl_light').innerHTML=BL_LIGHTS.map(c=>`<option value="${c[0]}">${esc(c[1])}</option>`).join('');
+$('ar_bl_dev').onchange=()=>{$('ar_bl_gpu').disabled=$('ar_bl_dev').value!=='gpu'};
+function fillBlenderAssets(){
+  const sel=$('ar_bl_assets');if(!sel)return;const cur=[...sel.selectedOptions].map(o=>o.value);
+  const a=(S&&S.assets)||[];
+  sel.innerHTML=a.length?a.map(x=>`<option value="${esc(x.id)}" ${cur.includes(x.id)?'selected':''}>${esc(nice(x.name))} (${esc(x.kind)})</option>`).join(''):'<option value="">No media imported yet</option>';
+}
+async function loadBlender(){
+  const r=await ep('/api/blender/preview','GET');
+  setAv('blender',!r.missing);
+  if(r.missing){BL=null;drawBlender();return}
+  BL=r;fillBlenderAssets();drawBlender();
+  const st=((BL.render)||{}).state||'';
+  if(['queued','running'].includes(st)&&openSuite()){clearTimeout(BLT);BLT=setTimeout(loadBlender,900)}
+}
+function drawBlender(){
+  const b=BL||{},bl=b.blender||{},scene=b.scene||{};
+  $('ar_bl_stat').innerHTML=b.blender?(bl.available?'<span class="badge ok">Blender '+(bl.version?esc(bl.version):'')+'</span> <span class="muted">'+esc(bl.path||'')+'</span>':'<span class="badge bad">Blender not found</span> <span class="muted">Install Blender 3.6+ to render 3D scenes.</span>'):'';
+  const views=scene.views||[];
+  $('ar_bl_views').innerHTML=BL_VIEWS.map(v=>{
+    const hit=views.find(x=>x.name===v[0]);
+    return '<figure>'+(hit&&hit.url?'<img src="'+esc(hit.url)+'" alt="'+esc(v[1])+' view">':'<div class="no">'+(scene.id?'no '+v[1].toLowerCase()+' view rendered yet':'create a scene to see the four views')+'</div>')+'<figcaption>'+esc(v[1])+'</figcaption></figure>';
+  }).join('');
+  const warn=b.warnings||[];
+  $('ar_bl_warn').innerHTML=warn.length?warn.map(w=>'<div class="w '+(w.severity==='error'?'err':'')+'">'+esc(w.message||'')+(w.object?' <span class="muted">· '+esc(w.object)+'</span>':'')+'</div>').join(''):'<span class="muted">'+(scene.id?'No spatial warnings.':'—')+'</span>';
+  const gpus=b.gpus||[],gcur=$('ar_bl_gpu').value;
+  $('ar_bl_gpu').innerHTML='<option value="">auto</option>'+gpus.map(g=>`<option value="${esc(g.id)}" ${String(g.id)===gcur?'selected':''}>${esc(g.name)}${g.vram_mb?' · '+Math.round(g.vram_mb/1024)+' GB':''}</option>`).join('');
+  $('ar_bl_gpu').disabled=$('ar_bl_dev').value!=='gpu';
+  const wk=b.workers||[],wcur=$('ar_bl_worker').value;
+  $('ar_bl_worker').innerHTML='<option value="">this machine</option>'+wk.map(w=>`<option value="${esc(w.id)}" ${String(w.id)===wcur?'selected':''}>${esc(w.label)}${w.state?' · '+esc(w.state):''}</option>`).join('');
+  const r=b.render||{};
+  const frac=r.total_frames?r.done_frames/r.total_frames:(r.progress||0);
+  $('ar_bl_prog').innerHTML=r.state?progBar(frac,r.state+(r.total_frames?' · frame '+r.done_frames+'/'+r.total_frames:'')+(r.eta_seconds?' · ~'+Math.round(r.eta_seconds)+'s left':'')):'';
+  $('ar_bl_msg').textContent=r.error?'✗ '+r.error:'';
+  const bad=r.failed_frames||[];
+  $('ar_bl_failed').innerHTML=bad.length?'<h3>Failed frames</h3><div class="muted" style="margin-bottom:6px">'+bad.length+' frame(s) stopped the render: '+bad.slice(0,40).map(f=>'<span class="feat">'+esc(f)+'</span>').join(' ')+(bad.length>40?' …':'')+'</div><button id="ar_bl_recover">Re-render failed frames</button>':(r.state==='failed'?'<h3>Failed frames</h3><div class="muted">The render failed but reported no per-frame detail.</div>':'');
+  if(bad.length)$('ar_bl_recover').onclick=blenderRecover;
+}
+async function blenderRecover(){
+  const r0=(BL&&BL.render&&BL.render.failed_frames)||[];
+  const r=await ep('/api/blender/recover','POST',{job_id:(BL&&BL.render&&BL.render.job_id)||'',frames:r0});
+  if(r.missing)return notAvail('ar_bl_msg','POST','/api/blender/recover');
+  toast(r.error?('✗ '+r.error):('Re-queued '+((r.requeued||[]).length)+' frame(s)'));
+  loadBlender();
+}
+$('ar_bl_scene').onclick=async()=>{
+  const body={template:$('ar_bl_tpl').value,text:$('ar_bl_text').value.trim(),asset_ids:[...$('ar_bl_assets').selectedOptions].map(o=>o.value).filter(Boolean),camera:{preset:$('ar_bl_cam').value},lighting:{preset:$('ar_bl_light').value},transparent:$('ar_bl_alpha').checked};
+  $('ar_bl_scenemsg').textContent='Creating…';
+  const r=await ep('/api/blender/scene','POST',body);
+  if(r.missing)return notAvail('ar_bl_scenemsg','POST','/api/blender/scene');
+  $('ar_bl_scenemsg').textContent=r.error?'✗ '+r.error:('✓ scene '+(r.scene_id||'')+' ready');
+  if(!r.error)loadBlender();
+};
+$('ar_bl_go').onclick=async()=>{
+  const gpu=$('ar_bl_dev').value==='gpu'&&$('ar_bl_gpu').value?$('ar_bl_gpu').value:null;
+  const body={scene_id:(BL&&BL.scene&&BL.scene.id)||'',width:+$('ar_bl_w').value,height:+$('ar_bl_h').value,fps:+$('ar_bl_fps').value,samples:+$('ar_bl_samples').value,engine:$('ar_bl_engine').value,device:$('ar_bl_dev').value,gpu_id:gpu,worker:$('ar_bl_worker').value||null,transparent:$('ar_bl_alpha').checked,resume:$('ar_bl_resume').checked,frames:$('ar_bl_frames').value.trim()||null};
+  $('ar_bl_msg').textContent='Starting…';
+  const r=await ep('/api/blender/render','POST',body);
+  if(r.missing)return notAvail('ar_bl_msg','POST','/api/blender/render');
+  if(r.error)return $('ar_bl_msg').textContent='✗ '+r.error;
+  $('ar_bl_msg').textContent='';loadBlender();
+};
+
+/* ---- license: order key plus the feature list this build actually carries ---- */
+function renderLicFeats(){
+  const ed=ED||{},pro=ed.edition==='pro',feats=ed.features||[],mods=ed.modules||[];
+  $('pe_feats').innerHTML='<dl class="kv"><dt>Edition</dt><dd><b>'+esc(ed.edition||'free')+'</b>'+(pro?'':' · a license unlocks Pro features')+'</dd>'
+    +'<dt>Entitled features</dt><dd>'+(feats.length?feats.map(f=>'<code class="feat">'+esc(f)+'</code>').join(' '):'<span class="muted">none beyond Free</span>')+'</dd>'
+    +'<dt>Licensed modules</dt><dd>'+(mods.length?mods.map(m=>esc(m)).join(', '):'<span class="muted">open-core build (no Pro module)</span>')+'</dd>'
+    +'<dt>Export limit</dt><dd>'+esc(ed.export_limit||'')+'</dd></dl>'
+    +'<div class="muted" style="font-size:12px;margin-top:6px">Activation applies immediately: this panel re-reads the edition, so no restart and no reload is needed.</div>';
+}
+$('pe_keygo').onclick=async()=>{
+  const key=$('pe_key').value.trim();
+  if(!key)return toast('Paste your order key first');
+  $('pe_keymsg').textContent='Checking…';
+  const r=await ep('/api/license/activate','POST',{order_key:key});
+  if(r.missing){$('pe_keymsg').innerHTML='';return notAvail('pe_keymsg','POST','/api/license/activate','Paste the license.json you were sent instead: that path is live and activates with no restart.')}
+  if(r.error){$('pe_keymsg').textContent='Not activated: '+r.error;return}
+  $('pe_key').value='';$('pe_keymsg').textContent='Activated';
+  ED=r;await loadEdition();refreshPro();toast('License activated');
+};
+
+/* ---- open the suite ---- */
+$('btnAr').onclick=()=>{
+  fillShortsSrc();fillAudioSrc();fillBlenderAssets();
+  open_('mAr');
+  Promise.all([loadShorts(),loadCaps(),loadAudio(),loadSetup(),loadBlender()]);
+};
+document.addEventListener('click',e=>{const b=e.target.closest('[data-dl-url]');if(b)download(b.getAttribute('data-dl-url'))});
+
+loadEdition();
 </script>
 </body>
 </html>

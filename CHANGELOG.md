@@ -3,6 +3,61 @@
 All notable changes. Format: [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer
 (0.x = alpha: anything may change).
 
+## [0.2.0] - 2026-11-14 (CINVAR Free + CINVAR Pro Early Access)
+
+- **Editions.** CINVAR Free (this Apache-2.0 repository, free, unlimited editing, no watermark, no account, export up to
+  2048x1080 / 1080x2048) and CINVAR Pro Early Access (core + a separately licensed Pro module, $29.99 one-time perpetual).
+- **Pro module:** 4K/8K export, batch rendering, saved export presets, advanced color grading. Offline Ed25519 license
+  activation (`cinvar edition activate --file license.json`); web UI edition badge, license and Pro panels.
+- **Open core.** The Pro module lives in a separate proprietary crate that links against the core; the Free build does not
+  contain it. Extension points: `render::extensions`, `tools::register_extension`, `edition::register_module`.
+- **Editing-action schema** extended with deterministic replay (symbolic references, canonical timeline hash) and a
+  synthetic benchmark generator. Journaling stays off by default. No model is trained.
+- Release builds enforce the Free export ceiling on every render path (CLI, tool/MCP, UI, Blender, enhance).
+
+## [0.1.1-alpha] - unreleased (branch `feature/deepseek-hardening-showcase`)
+
+### Security - deep hardening pass (see docs/DEEPSEEK_HARDENING_REVIEW.md)
+Self-tested only: **no independent review of this pass has been performed.** Each item names the
+test that catches a regression.
+
+- **Filesystem boundary is descriptor-relative.** The boundary decision and the open of a path are
+  now one kernel operation (`openat2` + `RESOLVE_BENEATH`, or a component `O_NOFOLLOW` walk), so a
+  symlink or directory swapped between the check and the use cannot redirect a read.
+  `import_asset` used to hash one open and copy from a second, so an asset record could describe
+  bytes the project did not hold - reproduced, then fixed with a single-pass hash-and-copy from one
+  descriptor and atomic `renameat` publication. `write_atomic` no longer creates a predictable temp
+  name through a symlink-following open. (`tests/fs_race_security.rs`, 6 tests + 4 unit tests.)
+- **Plugin sandbox denies `AF_UNIX` sockets.** A manifest declaring `network: true` kept the host
+  network namespace and could reach host abstract sockets (`@dbus-*`, `@systemd/*`, docker). A raw-BPF
+  seccomp program now returns `EPERM` for `socket(AF_UNIX, ...)` while TCP/UDP/IPv6 keep working,
+  and fails closed to `--unshare-net` when no filter can be installed. Binds are canonicalised and a
+  writable path containing the config directory loses its bind. (`tests/plugin_sandbox.rs`, 5 tests.)
+- **Secret redaction covers configured names.** A model profile with a custom `api_key_env` no
+  longer has its key echoed in tool errors.
+- **Local UI and MCP request bodies are capped** (1 MiB JSON with an honest 413; 16 MiB MCP
+  messages refused before allocation), and a media-route traversal answers an explicit 404 instead
+  of a bodiless 500.
+- Adversarial verification of what was already claimed: permission model (266 calls across every
+  name form), cloud-approval single-use/expiry and self-approval through other tools, CSRF, DNS
+  rebinding, traversal, hostile ComfyUI filenames. (`tests/mcp_adversarial.rs`, 6 tests.)
+
+### Fixed
+- **`cinvar.blender.animation` and `cinvar.ai.import_outputs` returned an asset id they never
+  persisted.** Every later tool call loads `project.json`, so the id was unusable
+  ("asset ... is not in this project") - found while building the Blender showcase. Regression test
+  `tests/blender_real.rs::a_rendered_clip_survives_into_a_later_tool_call` renders a clip in one
+  call and places it by id in the next; it fails with the persist removed.
+
+### Added
+- `src/util/fshandle.rs`: descriptor-relative open/copy/publish primitives with tests.
+- Three reproducible showcase videos in `~/cinvar-showcase` (agent editing, Blender production,
+  native 8K) with reproduction scripts, render logs and verified media metadata.
+
+### Known issues in this version
+See `docs/GITHUB_ISSUES_0.1.1.md` - no plugin sandbox on Windows/macOS, no per-plugin resource
+limits, render inputs still lack `-protocol_whitelist file`, and the Windows drawtext/caption path.
+
 ## [Unreleased] - 0.1.0-alpha (first public source release)
 
 ### Working (exercised by tests that run real software)

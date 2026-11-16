@@ -21,6 +21,8 @@ pub struct AgentOptions {
     pub max_iterations: u32,
     pub dry_run: bool,
     pub max_tool_result_chars: usize,
+    /// Skills the user picked by hand; always loaded, on top of the automatic ones.
+    pub pinned_skills: Vec<String>,
 }
 
 impl Default for AgentOptions {
@@ -29,6 +31,7 @@ impl Default for AgentOptions {
             max_iterations: 24,
             dry_run: false,
             max_tool_result_chars: 12_000,
+            pinned_skills: Vec::new(),
         }
     }
 }
@@ -40,6 +43,15 @@ pub struct TurnOutcome {
     pub tool_calls: Vec<ToolTrace>,
     pub usage: Usage,
     pub stop_reason: String,
+    /// Skills in force for this turn: what was loaded and why (automatic or pinned).
+    pub skills: Vec<SkillUse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillUse {
+    pub name: String,
+    pub reason: String,
+    pub auto: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,19 +72,16 @@ pub struct AgentSession {
     pub messages: Vec<Message>,
     pub usage: Usage,
     pub started: Instant,
+    /// Skills selected automatically on the last request that matched; kept for follow-ups like "make it punchier".
+    pub auto_skills: Vec<SkillUse>,
 }
 
 impl AgentSession {
     pub fn new(config: &Config, profile_name: Option<&str>) -> Result<AgentSession> {
-        let name = match profile_name {
-            Some(name) => name.to_string(),
-            None => config.active_model.clone().ok_or_else(|| {
-                Error::invalid("no model configured").with_hint(
-                    "add one with: cinvar models add local --provider mock --model mock-planner",
-                )
-            })?,
+        let (name, profile) = match profile_name {
+            Some(name) => (name.to_string(), config.profile(name)?.clone()),
+            None => config.role_profile("assistant")?,
         };
-        let profile = config.profile(&name)?.clone();
         let provider = build(&name, &profile, config)?;
         let registry = crate::tools::build_default();
         Ok(AgentSession {
@@ -84,6 +93,7 @@ impl AgentSession {
             messages: Vec::new(),
             usage: Usage::default(),
             started: Instant::now(),
+            auto_skills: Vec::new(),
         })
     }
 
@@ -99,7 +109,8 @@ impl AgentSession {
         prompt.push_str("4. Renders run as background jobs. Poll cinvar.render.status until the job is succeeded or failed.\n");
         prompt.push_str("5. When a request is style specific, load the matching skill with cinvar.skills.load and follow its guidance.\n");
         prompt.push_str("6. If something is impossible with the available tools, say so plainly and explain what is missing. Never invent a result.\n");
-        prompt.push_str("7. Keep tool arguments in the documented format; times accept seconds, MM:SS or HH:MM:SS.mmm.\n\n");
+        prompt.push_str("7. Keep tool arguments in the documented format; times accept seconds, MM:SS or HH:MM:SS.mmm.\n");
+        prompt.push_str("8. Skills matching the request are loaded for you below (\"Active skills\"); follow them without being asked. Delegate to specialists: cinvar.ai.write_script for narration/copy, cinvar.ai.design_blender then cinvar.blender.animation for 3D, cinvar.ai.design_motion then its steps for titles, lower thirds and motion graphics, cinvar.ai.generate_video for generated b-roll (costs money; only if the user wants generated footage).\n\n");
 
         prompt.push_str("Project state:\n");
         let digest = serde_json::json!({
@@ -152,7 +163,33 @@ impl AgentSession {
         request: &str,
         opts: &AgentOptions,
     ) -> Result<TurnOutcome> {
-        let system = self.system_prompt(project);
+        let mut system = self.system_prompt(project);
+        let installed = crate::skills::load_all().unwrap_or_default();
+        let mut in_force: Vec<SkillUse> = opts
+            .pinned_skills
+            .iter()
+            .filter(|n| installed.iter().any(|k| &k.name == *n))
+            .map(|n| SkillUse { name: n.clone(), reason: "you pinned it".into(), auto: false })
+            .collect();
+        if self.config.ui.auto_skills {
+            let picks = crate::skills::router::route(&installed, request, 2);
+            if !picks.is_empty() {
+                self.auto_skills = picks.into_iter().map(|p| SkillUse { name: p.name, reason: p.reason, auto: true }).collect();
+            }
+            for u in &self.auto_skills {
+                if !in_force.iter().any(|x| x.name == u.name) {
+                    in_force.push(u.clone());
+                }
+            }
+        }
+        if !in_force.is_empty() {
+            let names: Vec<String> = in_force.iter().map(|u| u.name.clone()).collect();
+            system.push_str("\nActive skills (selected for this request: ");
+            system.push_str(&names.join(", "));
+            system.push_str("). Follow their guidance:\n\n");
+            system.push_str(&crate::skills::render_prompt(&installed, &names, 24_000));
+            system.push('\n');
+        }
         self.messages.push(Message::user(request));
         let mut traces: Vec<ToolTrace> = Vec::new();
         let tools = self.registry.to_schemas();
@@ -326,6 +363,7 @@ impl AgentSession {
             tool_calls: traces,
             usage,
             stop_reason,
+            skills: in_force,
         })
     }
 

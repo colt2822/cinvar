@@ -15,6 +15,8 @@ pub struct Skill {
     pub source: PathBuf,
 }
 
+pub mod router;
+
 pub fn builtin_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("CINVAR_SKILLS_DIR") {
         return PathBuf::from(dir);

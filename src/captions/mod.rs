@@ -5,8 +5,13 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, ErrorCode, Result};
 use crate::project::model::Cue;
+use crate::util::paths::HelperOrigin;
 use crate::util::proc::{self, ProcOpts};
 use crate::util::time::Time;
+
+pub mod ass;
+pub mod vocab;
+pub mod whisperx;
 
 const MAX_CAPTION_FILE: u64 = 4 * 1024 * 1024;
 
@@ -27,6 +32,8 @@ fn parse_stamp(raw: &str) -> Option<f64> {
 /// Parse SRT or WebVTT text into cues. Markup tags are stripped; invalid blocks are skipped
 /// and counted so the caller can report them.
 pub fn parse_subtitles(text: &str) -> (Vec<Cue>, usize) {
+    // A byte-order mark survives into the text on some paths; it would break the first index.
+    let text = text.trim_start_matches('\u{feff}');
     let normalised = text.replace("\r\n", "\n").replace('\r', "\n");
     let mut cues = Vec::new();
     let mut skipped = 0;
@@ -82,6 +89,49 @@ fn strip_tags(text: &str) -> String {
         .replace("{\\an8}", "")
 }
 
+/// Decodes caption text. Windows tools write UTF-16 with a byte-order mark and "UTF-8 with BOM",
+/// and neither is valid UTF-8 for `read_to_string`; the mark must also be stripped from a UTF-8
+/// file or the first cue's index no longer parses.
+fn decode_caption_bytes(bytes: &[u8]) -> Option<String> {
+    let le = bytes.starts_with(&[0xFF, 0xFE]);
+    let be = bytes.starts_with(&[0xFE, 0xFF]);
+    if le || be {
+        let body = bytes.get(2..)?;
+        if body.len() % 2 != 0 {
+            return None;
+        }
+        let units: Vec<u16> = body
+            .chunks_exact(2)
+            .map(|pair| {
+                if le {
+                    u16::from_le_bytes([pair[0], pair[1]])
+                } else {
+                    u16::from_be_bytes([pair[0], pair[1]])
+                }
+            })
+            .collect();
+        return String::from_utf16(&units).ok();
+    }
+    Some(
+        String::from_utf8_lossy(bytes)
+            .trim_start_matches('\u{feff}')
+            .to_string(),
+    )
+}
+
+/// Reads a caption file in any of those encodings.
+fn read_caption_file(path: &Path) -> Result<String> {
+    let meta = std::fs::metadata(path)
+        .map_err(|e| Error::io(format!("cannot read {}: {e}", path.display())))?;
+    if meta.len() > MAX_CAPTION_FILE {
+        return Err(Error::invalid("caption file is larger than 4 MB"));
+    }
+    let bytes = std::fs::read(path)
+        .map_err(|e| Error::io(format!("cannot read {}: {e}", path.display())))?;
+    decode_caption_bytes(&bytes)
+        .ok_or_else(|| Error::invalid(format!("{} is not valid UTF-8 or UTF-16", path.display())))
+}
+
 pub fn read_subtitle_file(path: &Path) -> Result<(Vec<Cue>, usize)> {
     let ext = path
         .extension()
@@ -94,13 +144,7 @@ pub fn read_subtitle_file(path: &Path) -> Result<(Vec<Cue>, usize)> {
             path.display()
         )));
     }
-    let meta = std::fs::metadata(path)
-        .map_err(|e| Error::io(format!("cannot read {}: {e}", path.display())))?;
-    if meta.len() > MAX_CAPTION_FILE {
-        return Err(Error::invalid("caption file is larger than 4 MB"));
-    }
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| Error::io(format!("cannot read {}: {e}", path.display())))?;
+    let text = read_caption_file(path)?;
     let (cues, skipped) = parse_subtitles(&text);
     if cues.is_empty() {
         return Err(Error::invalid(
@@ -250,6 +294,10 @@ pub enum Engine {
     /// local model only (`CINVAR_FASTER_WHISPER_MODEL` / `_CACHE`); never downloads unless
     /// `CINVAR_FASTER_WHISPER_ALLOW_DOWNLOAD=1`.
     FasterWhisper(PathBuf),
+    /// WhisperX (word-level alignment) in a Python environment named by `CINVAR_WHISPERX_PYTHON`.
+    /// Local models only unless `CINVAR_WHISPERX_ALLOW_DOWNLOAD=1`. Chosen explicitly
+    /// (`--engine whisperx`), never by auto-detection.
+    WhisperX(PathBuf),
 }
 
 const FW_HELPER: &str = include_str!("fw_helper.py");
@@ -261,6 +309,7 @@ impl Engine {
             Engine::Whisper(_) => "whisper",
             Engine::WhisperCpp(..) => "whisper.cpp",
             Engine::FasterWhisper(_) => "faster-whisper",
+            Engine::WhisperX(_) => "whisperx",
         }
     }
 }
@@ -271,8 +320,8 @@ pub fn detect_engine() -> Option<Engine> {
             return Some(Engine::Custom(cmd));
         }
     }
-    if let Ok(py) = std::env::var("CINVAR_FASTER_WHISPER_PYTHON") {
-        let py = PathBuf::from(py);
+    // The exported variable wins; otherwise the path cinvar setup --pro-ai recorded is used.
+    if let Some((py, _)) = crate::util::paths::helper_path("CINVAR_FASTER_WHISPER_PYTHON") {
         if py.is_file() {
             return Some(Engine::FasterWhisper(py));
         }
@@ -289,6 +338,44 @@ pub fn detect_engine() -> Option<Engine> {
     proc::which("whisper").map(Engine::Whisper)
 }
 
+/// Resolve an engine by name: `auto`/empty uses detection, `whisperx` requires
+/// `CINVAR_WHISPERX_PYTHON`.
+pub fn detect_engine_named(name: &str) -> Result<Engine> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "" | "auto" => detect_engine()
+            .ok_or_else(|| Error::new(ErrorCode::DependencyMissing, engine_help().to_string())),
+        "whisperx" => {
+            // The exported variable wins; otherwise the path cinvar setup --pro-ai recorded is
+            // used, so an installed WhisperX needs no environment at all.
+            let (py, origin) = crate::util::paths::helper_path("CINVAR_WHISPERX_PYTHON")
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorCode::DependencyMissing,
+                        "--engine whisperx needs CINVAR_WHISPERX_PYTHON set to a Python with whisperx installed (plus CINVAR_WHISPERX_MODEL for a local model), or cinvar setup --pro-ai to install one".to_string(),
+                    )
+                })?;
+            if !py.is_file() {
+                let message = match origin {
+                    HelperOrigin::Environment => format!(
+                        "CINVAR_WHISPERX_PYTHON points at {}, which is not a file",
+                        py.display()
+                    ),
+                    HelperOrigin::Config => format!(
+                        "CINVAR_WHISPERX_PYTHON recorded by cinvar setup --pro-ai points at {}, which is not a file",
+                        py.display()
+                    ),
+                };
+                return Err(Error::new(ErrorCode::DependencyMissing, message)
+                    .with_hint("re-run: cinvar setup --pro-ai, or export the variable yourself"));
+            }
+            Ok(Engine::WhisperX(py))
+        }
+        other => Err(Error::invalid(format!(
+            "unknown engine '{other}'; use auto or whisperx"
+        ))),
+    }
+}
+
 pub fn engine_help() -> &'static str {
     "No transcription engine found. Options (all optional): install openai-whisper so `whisper` is on PATH; or install whisper.cpp and set CINVAR_WHISPER_MODEL to a ggml model file; or set CINVAR_TRANSCRIBE_CMD to a command template containing {audio} (input wav) and {srt} (output file). Without an engine you can still use cinvar.captions.from_script or cinvar.captions.import."
 }
@@ -300,10 +387,33 @@ pub fn run_engine(
     work_dir: &Path,
     language: Option<&str>,
 ) -> Result<String> {
+    run_engine_with_vocab(engine, audio_wav, work_dir, language, &[])
+}
+
+/// As `run_engine`, with a custom vocabulary handed to the engine's prompt/hotword channel
+/// (see `vocab`). An empty vocabulary is exactly `run_engine`: no argument is added.
+pub fn run_engine_with_vocab(
+    engine: &Engine,
+    audio_wav: &Path,
+    work_dir: &Path,
+    language: Option<&str>,
+    vocab: &[String],
+) -> Result<String> {
+    let prompt = vocab::prompt_for(vocab);
     std::fs::create_dir_all(work_dir)
         .map_err(|e| Error::io(format!("cannot create {}: {e}", work_dir.display())))?;
     let srt = work_dir.join("transcript.srt");
     let _ = std::fs::remove_file(&srt);
+    if let Engine::WhisperX(py) = engine {
+        let transcript = whisperx::run_whisperx_with_vocab(py, audio_wav, work_dir, language, vocab)?;
+        if transcript.segments.is_empty() {
+            return Err(Error::new(
+                ErrorCode::Render,
+                "the whisperx engine found no speech".to_string(),
+            ));
+        }
+        return Ok(whisperx::srt_from_segments(&transcript.segments));
+    }
     let opts = ProcOpts::default().with_timeout(3600);
     let output = match engine {
         Engine::Custom(template) => {
@@ -311,6 +421,9 @@ pub fn run_engine(
             let mut parts = template.split_whitespace().map(|p| {
                 p.replace("{audio}", &audio_wav.to_string_lossy())
                     .replace("{srt}", &srt.to_string_lossy())
+                    // A template that wants the vocabulary opts in with {vocab}; it stays one
+                    // argv element, so terms can never be read as flags.
+                    .replace("{vocab}", prompt.as_deref().unwrap_or(""))
             });
             let program = parts
                 .next()
@@ -333,6 +446,10 @@ pub fn run_engine(
                 args.push("--language".into());
                 args.push(lang.into());
             }
+            if let Some(prompt) = &prompt {
+                args.push("--initial_prompt".into());
+                args.push(prompt.clone());
+            }
             let out = proc::run(bin, &args, &opts)?;
             // openai-whisper names the output after the input file.
             let produced = work_dir.join(format!(
@@ -350,13 +467,17 @@ pub fn run_engine(
         Engine::FasterWhisper(py) => {
             let script = work_dir.join("fw_helper.py");
             std::fs::write(&script, FW_HELPER)?;
-            let args = vec![
+            let mut args = vec![
                 "-I".to_string(),
                 script.to_string_lossy().to_string(),
                 audio_wav.to_string_lossy().to_string(),
                 srt.to_string_lossy().to_string(),
                 language.unwrap_or("").to_string(),
             ];
+            if let Some(prompt) = &prompt {
+                args.push(prompt.clone());
+                args.push(vocab::hotwords_for(vocab).unwrap_or_default());
+            }
             // -I ignores PYTHON* env vars but the model settings are plain env for the child.
             let mut o = ProcOpts::default().with_timeout(3600);
             for key in [
@@ -365,11 +486,15 @@ pub fn run_engine(
                 "CINVAR_FASTER_WHISPER_ALLOW_DOWNLOAD",
                 "HF_HOME",
             ] {
-                if let Ok(v) = std::env::var(key) {
+                // Exported variable first, then the value cinvar setup --pro-ai recorded.
+                if let Some(v) = crate::util::paths::helper_value(key) {
                     o.env.push((key.to_string(), v));
                 }
             }
             proc::run(py, &args, &o)?
+        }
+        Engine::WhisperX(_) => {
+            return Err(Error::internal("whisperx is handled before the process runner"))
         }
         Engine::WhisperCpp(bin, model) => {
             let prefix = work_dir.join("transcript");
@@ -386,6 +511,10 @@ pub fn run_engine(
                 args.push("-l".into());
                 args.push(lang.into());
             }
+            if let Some(prompt) = &prompt {
+                args.push("--prompt".into());
+                args.push(prompt.clone());
+            }
             proc::run(bin, &args, &opts)?
         }
     };
@@ -399,7 +528,7 @@ pub fn run_engine(
             ),
         ));
     }
-    std::fs::read_to_string(&srt).map_err(|_| {
+    read_caption_file(&srt).map_err(|_| {
         Error::new(
             ErrorCode::Render,
             format!(
@@ -492,5 +621,31 @@ mod tests {
     #[test]
     fn rejects_non_subtitle_files() {
         assert!(read_subtitle_file(Path::new("/tmp/x.txt")).is_err());
+    }
+
+    #[test]
+    fn windows_encoded_caption_files_are_decoded() {
+        // "UTF-8 with BOM", as Notepad writes it.
+        let mut utf8 = vec![0xEF, 0xBB, 0xBF];
+        utf8.extend_from_slice(b"1\r\n00:00:01,000 --> 00:00:02,000\r\nHello\r\n");
+        let text = decode_caption_bytes(&utf8).unwrap();
+        let (cues, skipped) = parse_subtitles(&text);
+        assert_eq!(skipped, 0);
+        assert_eq!(cues.len(), 1);
+        assert_eq!(cues[0].text, "Hello");
+
+        // UTF-16 LE with a BOM, the other encoding Windows editors produce.
+        let body = "1\r\n00:00:01,000 --> 00:00:02,000\r\nHello\r\n";
+        let mut utf16 = vec![0xFF, 0xFE];
+        for unit in body.encode_utf16() {
+            utf16.extend_from_slice(&unit.to_le_bytes());
+        }
+        let text = decode_caption_bytes(&utf16).unwrap();
+        let (cues, skipped) = parse_subtitles(&text);
+        assert_eq!(skipped, 0);
+        assert_eq!(cues.len(), 1);
+
+        // A torn UTF-16 file is reported, not silently half-decoded.
+        assert!(decode_caption_bytes(&[0xFF, 0xFE, 0x41]).is_none());
     }
 }

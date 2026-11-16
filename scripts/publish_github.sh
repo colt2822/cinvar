@@ -46,6 +46,22 @@ echo "    bundle: $BUNDLE   local tag: archive/full-history-${SRC_SHA:0:7}   (so
 
 echo "==> building the clean single-commit branch"
 git checkout -q --orphan public-main
+# Open-core boundary: the proprietary Pro module (pro/, LICENSE-PRO) is never published. Drop it and
+# its workspace entry so the public tree is exactly the Apache-2.0 core, and prune Cargo.lock to match.
+git rm -r -q --cached pro 2>/dev/null || true; rm -rf pro
+python3 - <<'PY'
+import re
+s = open("Cargo.toml").read()
+s = re.sub(r'\n\[workspace\]\nmembers = \["pro"\]\n', '\n', s)
+open("Cargo.toml", "w").write(s)
+PY
+python3 - <<'PY'
+import re
+s = open("Cargo.lock").read()
+s = re.sub(r'\[\[package\]\]\nname = "cinvar-pro"\n.*?(?=\n\[\[package\]\]|\Z)', '', s, flags=re.S).replace("\n\n\n", "\n\n")
+open("Cargo.lock", "w").write(s)
+PY
+cargo check --locked -q || { echo "public tree does not resolve without pro/"; exit 1; }
 git add -A
 GIT_AUTHOR_NAME="$OWNER" GIT_AUTHOR_EMAIL="${UID_GH}+${OWNER}@users.noreply.github.com" \
 GIT_COMMITTER_NAME="$OWNER" GIT_COMMITTER_EMAIL="${UID_GH}+${OWNER}@users.noreply.github.com" \

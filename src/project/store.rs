@@ -5,9 +5,17 @@ use sha2::{Digest, Sha256};
 
 use crate::error::{Error, Result};
 use crate::project::model::*;
-use crate::util::{paths, text};
+use crate::util::{fshandle, paths, text};
 
 pub const PROJECT_FILE: &str = "project.json";
+
+/// Whether an import must look like real media before it is allowed to land in the project.
+/// The agent-facing tools use `MediaOnly`; the CLI and integrations keep `Any`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportPolicy {
+    Any,
+    MediaOnly,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RevisionInfo {
@@ -33,7 +41,18 @@ impl ProjectStore {
             root = parent.join(format!("{slug}-{attempt}"));
             attempt += 1;
         }
-        let store = ProjectStore { root };
+        Self::create_at(&root, name)
+    }
+
+    /// Initialize a project INSIDE an existing customer directory. When a
+    /// customer points --project at a directory they made (or `setup` made),
+    /// silently inventing `name-2` next to it loses their work — the project
+    /// must land where they asked.
+    pub fn create_at(dir: &Path, name: &str) -> Result<(ProjectStore, Project)> {
+        paths::ensure_dir(dir)?;
+        let store = ProjectStore {
+            root: paths::normalize(dir),
+        };
         for sub in ["assets", "cache", "renders", "revisions", "sessions", "tmp"] {
             paths::ensure_dir(&store.root.join(sub))?;
         }
@@ -74,6 +93,9 @@ impl ProjectStore {
     }
     pub fn renders_dir(&self) -> PathBuf {
         self.root.join("renders")
+    }
+    pub fn actions_dir(&self) -> PathBuf {
+        self.root.join("actions")
     }
     pub fn revisions_dir(&self) -> PathBuf {
         self.root.join("revisions")
@@ -223,25 +245,37 @@ impl ProjectStore {
         self.save(project)
     }
 
+    /// Imports a file the human named (CLI, connect, an integration's own output). The name is
+    /// opened exactly once here: hashing, sizing and copying all read the same descriptor, so a
+    /// name that is repointed mid-import cannot make the recorded hash describe bytes other than
+    /// the ones stored in the project.
     pub fn import_asset(
         &self,
         project: &mut Project,
         source: &Path,
         origin: &str,
     ) -> Result<Asset> {
-        if !source.exists() {
-            return Err(Error::not_found(format!(
-                "media file not found: {}",
-                source.display()
-            )));
-        }
-        let bytes_total = std::fs::metadata(source)?.len();
+        let (_, file) = crate::util::fshandle::open_once(source)?;
         let file_name = source
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
-        let ext = source
+        self.import_handle(project, file, &file_name, origin, ImportPolicy::Any)
+    }
+
+    /// Imports an already-open descriptor. Callers that serve an agent open the path through the
+    /// boundary (`fshandle::Dir::open_file`) and hand the handle here, so the file that passed
+    /// the boundary check is the file that gets copied.
+    pub fn import_handle(
+        &self,
+        project: &mut Project,
+        mut source: std::fs::File,
+        file_name: &str,
+        origin: &str,
+        policy: ImportPolicy,
+    ) -> Result<Asset> {
+        let ext = Path::new(file_name)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
@@ -254,20 +288,51 @@ impl ProjectStore {
             _ => AssetKind::Other,
         };
 
-        let sha256 = sha256_file(source)?;
+        // One pass: the bytes are hashed and copied from the same descriptor, and the size comes
+        // from that copy rather than from a separate metadata call that could describe an older
+        // version of the file.
+        let assets = fshandle::Dir::open(&self.assets_dir())?;
+        let staged = fshandle::stage_into(&assets, &mut source)?;
+        let sha256 = staged.sha256.clone();
+        let bytes_total = staged.bytes;
+
         let existing = project
             .assets
             .iter()
             .find(|a| a.sha256 == sha256 && a.bytes == bytes_total);
         if let Some(asset) = existing {
+            // Dropping the staged copy removes the temporary file.
             return Ok(asset.clone());
         }
 
         let unique = format!("{}-{}", &sha256[..8.min(sha256.len())], file_name);
+        let staged_path = self.assets_dir().join(staged.tmp_name());
+        if policy == ImportPolicy::MediaOnly {
+            // The content check runs on the copied bytes, so what is judged is what is stored.
+            // The staging path is internal: report the caller's file name instead of it.
+            let internal = staged_path.display().to_string();
+            crate::media::probe_untrusted(&staged_path).map_err(|e| {
+                Error::new(
+                    crate::error::ErrorCode::InvalidInput,
+                    format!(
+                        "not importable as media: {}",
+                        e.message.replace(&internal, file_name)
+                    ),
+                )
+            })?;
+        }
+        let staged_handle = staged.file().try_clone()?;
+        staged.publish(&assets, &unique)?;
+
         let dest = self.assets_dir().join(&unique);
-        paths::unlink_if_symlink(&dest);
-        if !dest.exists() {
-            std::fs::copy(source, &dest)?;
+        if !fshandle::same_file_as(&staged_handle, &dest) {
+            return Err(Error::new(
+                crate::error::ErrorCode::PermissionDenied,
+                format!(
+                    "the imported file was replaced while it was being published: {}",
+                    dest.display()
+                ),
+            ));
         }
 
         let info = match kind {
@@ -348,6 +413,22 @@ pub fn sha256_file(path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn create_at_initializes_inside_existing_customer_dir() {
+        // Customer made their own directory (or `setup --project` did); the
+        // project must land in it, not in a silently invented `name-2` sibling.
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("my-video");
+        std::fs::create_dir_all(&dir).unwrap();
+        let (store, _project) = ProjectStore::create_at(&dir, "my-video").unwrap();
+        assert_eq!(store.root, dir);
+        assert!(dir.join("project.json").exists());
+        assert!(dir.join("renders").is_dir());
+        // reopening works
+        let reopened = ProjectStore::open(&dir).unwrap();
+        assert_eq!(reopened.root, dir);
+    }
 
     #[test]
     fn creates_and_roundtrips_project() {

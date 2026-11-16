@@ -52,6 +52,8 @@ pub struct MediaInfo {
     pub has_audio: bool,
     pub rotation: i32,
     pub nb_frames: Option<u64>,
+    /// True when the video stream carries a real alpha channel (yuva*, rgba, VP9 alpha_mode, ...).
+    pub has_alpha: bool,
 }
 
 impl MediaInfo {

@@ -33,7 +33,7 @@ MCP server and checks it ran **inside the sandbox**. Use it for your own plugin:
 | `capabilities` | no | free-form tags, e.g. `video.effects`, `analysis.project`, `export.format`, `render.backend`, `ai.enhance` |
 | `platforms` | no | `linux`, `macos`, `windows`; others skip the plugin. Empty = all |
 | `requires` | no | programs that must be on PATH (reported by `plugins list`) |
-| `permissions` | no | `spawn_subprocess` (must be true to run anything), `network` (default false), `write_paths` |
+| `permissions` | no | `spawn_subprocess` (must be true to run anything), `network` (default false; **egress only** - see the security model), `write_paths` (declared and disclosed to users; the sandbox still grants write access to the project only) |
 | `inputs`, `outputs`, `hardware` | no | documentation for users |
 | `costs_money`, `uses_cloud`, `sends_files_off_device` | no | **disclose honestly**; shown to users before enabling |
 | `health` | no | argv run (sandboxed, short timeout) to report availability |
@@ -55,6 +55,17 @@ MCP server and checks it ran **inside the sandbox**. Use it for your own plugin:
 ## Security model (read before publishing a plugin)
 - On Linux every command runs under **bubblewrap**: read-only system, empty `$HOME`, CINVAR config/credentials hidden,
   project writable, plugin dir read-only, **no network unless `permissions.network` is true**, new PID/IPC namespaces.
+  Only `/proc` of the plugin's own PID namespace is visible, so host processes cannot be listed, read or signalled.
+- `permissions.network: true` buys **network egress, never control of host services**. The sandbox keeps the host network
+  namespace (so a local ComfyUI, a render box or DNS stays reachable) and installs a seccomp filter that makes
+  `socket(AF_UNIX, ...)` fail with EPERM. A plugin therefore **cannot talk to any host Unix socket**: not the D-Bus /
+  systemd sockets under `/run` (masked anyway) and not the *abstract* ones (`@dbus-*`, `@systemd/*`, docker,
+  gpg-agent), which no path masking can hide because they live in the network namespace. `AF_INET`, `AF_INET6` and
+  `AF_NETLINK` (DNS) keep working, and `socketpair()` is untouched, so plugins that talk to their own threads still work.
+  Design plugins so they do not need a local daemon socket.
+- Where no filter can be installed (architectures other than x86_64 and aarch64, or an unwritable CINVAR config directory)
+  the sandbox **fails closed** to an isolated, empty network namespace: a `network: true` plugin then has no network at
+  all. Treat network as optional in your plugin and report a clear error when a connection fails.
 - Without bubblewrap, commands are **refused** unless the user sets `security.allow_unsandboxed_plugins = true`
   (then the plugin runs with the user's full privileges). macOS and Windows have **no sandbox yet** - treat plugins there as
   running as you. Do not ship plugins that assume otherwise.

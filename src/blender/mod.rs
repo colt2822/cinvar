@@ -7,6 +7,14 @@ use crate::util::paths;
 use crate::util::proc::{self, ProcOpts};
 use crate::util::time::Time;
 
+pub mod alpha;
+pub mod distributed;
+pub mod gpu;
+pub mod mockup;
+pub mod preview;
+pub mod scene;
+pub mod worker;
+
 const DEFAULT_ACCENT: (u8, u8, u8) = (0x4f, 0x8c, 0xff);
 const MAX_STDERR_LINES: usize = 20;
 
@@ -19,6 +27,10 @@ pub struct AnimationSpec {
     pub height: u32,
     pub fps: u32,
     pub color: String,
+    /// Render with an alpha channel and deliver alpha-preserving encodes (Argon).
+    /// Serde-default false, so every existing spec keeps rendering an opaque MP4.
+    #[serde(default)]
+    pub transparent: bool,
 }
 
 impl Default for AnimationSpec {
@@ -31,6 +43,7 @@ impl Default for AnimationSpec {
             height: 1080,
             fps: 30,
             color: "#4f8cff".into(),
+            transparent: false,
         }
     }
 }
@@ -143,6 +156,9 @@ fn py_string(text: &str) -> String {
 
 /// Builds the Blender Python script for a spec. Kept public and side-effect free
 /// so the generated Python can be unit-tested without Blender installed.
+/// Bump when the generated Blender script changes what a frame looks like (invalidates cached renders).
+pub const SCRIPT_VERSION: u32 = 3;
+
 pub fn script_for(spec: &AnimationSpec) -> String {
     let (width, height) = spec.canvas();
     let rgb = parse_color(&spec.color);
@@ -171,7 +187,11 @@ pub fn script_for(spec: &AnimationSpec) -> String {
     out.push_str(&format!("FPS = {}\n", spec.fps.max(1)));
     out.push_str(&format!("RES_X = {width}\nRES_Y = {height}\n"));
     out.push_str(&format!("FRAME_START = {}\n", spec.frame_start()));
-    out.push_str(&format!("FRAME_END = {}\n\n", spec.frame_end()));
+    out.push_str(&format!("FRAME_END = {}\n", spec.frame_end()));
+    out.push_str(&format!(
+        "TRANSPARENT = {}\n\n",
+        if spec.transparent { "True" } else { "False" }
+    ));
 
     out.push_str(
         r#"def reset_scene():
@@ -193,7 +213,7 @@ def make_emissive_material(name, rgba):
         elif "Emission" in inputs:
             inputs["Emission"].default_value = rgba
         if "Emission Strength" in inputs:
-            inputs["Emission Strength"].default_value = 3.0
+            inputs["Emission Strength"].default_value = 1.0
         if "Roughness" in inputs:
             inputs["Roughness"].default_value = 0.3
     return mat
@@ -224,6 +244,17 @@ def add_camera(distance):
     return cam
 
 
+def fit_text(obj, cam, distance, fill=0.78):
+    """Scale the text so its widest extent stays inside the frame at the settled camera distance."""
+    bpy.context.view_layer.update()
+    width = max(obj.dimensions.x, 1e-6)
+    long_side = 2.0 * distance * math.tan(cam.data.angle / 2.0)
+    visible_w = long_side if RES_X >= RES_Y else long_side * RES_X / RES_Y
+    limit = visible_w * fill
+    if width > limit:
+        obj.data.size *= limit / width
+
+
 def add_lights():
     bpy.ops.object.light_add(type="AREA", location=(4.0, -6.0, 5.0))
     key = bpy.context.active_object
@@ -244,6 +275,25 @@ def configure_render():
     scene.render.resolution_percentage = 100
     scene.render.fps = FPS
     scene.render.image_settings.file_format = "PNG"
+    # Argon: a transparent clip is composited over other footage, so the film keeps its alpha
+    # (film_transparent) and every frame is written as RGBA. The frame-completeness checks and
+    # the encode-side alpha verification are unchanged either way.
+    if TRANSPARENT:
+        scene.render.film_transparent = True
+        scene.render.image_settings.color_mode = "RGBA"
+        scene.render.image_settings.color_depth = "8"
+    else:
+        scene.render.film_transparent = False
+        scene.render.image_settings.color_mode = "RGB"
+    # Standard view transform: Blender 4.x defaults to AgX, which desaturates and lightens an accent
+    # colour (a vivid purple came out pastel lavender). The colour the user asked for is the colour shown.
+    scene.view_settings.view_transform = "Standard"
+    try:
+        scene.view_settings.look = "None"
+    except TypeError:
+        pass
+    scene.view_settings.exposure = 0.0
+    scene.view_settings.gamma = 1.0
     # Resume support: frames already on disk are skipped (CINVAR validates them first).
     scene.render.use_overwrite = False
     scene.render.use_placeholder = False
@@ -303,13 +353,17 @@ def main():
     material = make_emissive_material("CINVAR_ACCENT", COLOR_RGBA)
     obj = add_text(TEXT, material)
     cam = add_camera(8.0)
+    fit_text(obj, cam, 8.0)
     add_lights()
     if TEMPLATE == "title_3d":
         animate_title_3d(obj, cam)
     else:
         animate_logo_reveal(obj, cam)
     bpy.ops.render.render(animation=True)
-    print("CINVAR_BLENDER_DONE frames=%d color=%s" % (FRAME_END - FRAME_START + 1, REQUESTED_COLOR))
+    print(
+        "CINVAR_BLENDER_DONE frames=%d transparent=%s color=%s"
+        % (FRAME_END - FRAME_START + 1, TRANSPARENT, REQUESTED_COLOR)
+    )
 
 
 main()
@@ -411,7 +465,11 @@ pub fn detect() -> Result<BlenderInfo> {
 /// which is what makes interrupted renders resumable and duplicate renders free.
 pub fn spec_hash(spec: &AnimationSpec) -> String {
     use sha2::{Digest, Sha256};
-    let canonical = serde_json::to_string(spec).unwrap_or_default();
+    // The script version is part of the identity: a fixed script must never resume frames from an older one.
+    let canonical = format!(
+        "script-v{SCRIPT_VERSION}:{}",
+        serde_json::to_string(spec).unwrap_or_default()
+    );
     let digest = Sha256::digest(canonical.as_bytes());
     digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
 }
@@ -476,11 +534,53 @@ impl RenderControl<'_> {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BlenderRender {
+    /// Primary deliverable: clip.mp4 when opaque, ProRes 4444 (or alpha WebM) when transparent.
     pub clip: PathBuf,
     pub frames: usize,
     pub resumed_frames: usize,
     pub blender_version: String,
     pub job_dir: PathBuf,
+    pub transparent: bool,
+    /// Alpha-preserving WebM, when the local ffmpeg can encode one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webm: Option<PathBuf>,
+    /// What the delivered files were measured to contain (empty for an opaque render).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub alpha: Vec<alpha::AlphaCheck>,
+    /// Which alpha encodes this ffmpeg was verified to deliver.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encoders: Option<alpha::AlphaSupport>,
+}
+
+impl BlenderRender {
+    /// True when every delivered artifact carries verified, non-trivial alpha.
+    pub fn alpha_verified(&self) -> bool {
+        !self.alpha.is_empty() && self.alpha.iter().all(|check| check.verified)
+    }
+}
+
+/// File name of the primary deliverable for a render mode.
+pub fn clip_name(transparent: bool) -> &'static str {
+    if transparent {
+        "clip_prores4444.mov"
+    } else {
+        "clip.mp4"
+    }
+}
+
+/// Where a job keeps its rendered PNG frames.
+pub fn frames_dir(job_dir: &Path) -> PathBuf {
+    job_dir.join("frames")
+}
+
+/// The rendered PNG sequence as an ffmpeg input pattern (composites on the CINVAR timeline).
+pub fn frames_pattern(job_dir: &Path) -> PathBuf {
+    frames_dir(job_dir).join("frame_%04d.png")
+}
+
+/// One animation frame as an overlay source: the PNG sequence a timeline composite reads.
+pub fn png_sequence_source(job_dir: &Path, spec: &AnimationSpec) -> alpha::OverlaySource {
+    alpha::OverlaySource::sequence(frames_pattern(job_dir), spec.fps.max(1), spec.frame_start())
 }
 
 pub fn render_animation(spec: &AnimationSpec, out_dir: &Path) -> Result<PathBuf> {
@@ -563,8 +663,39 @@ pub fn render_animation_job(
         ));
     }
 
-    let clip = out_dir.join("clip.mp4");
-    let sequence = frames_dir.join("frame_%04d.png");
+    let mut webm = None;
+    let mut alpha_checks: Vec<alpha::AlphaCheck> = Vec::new();
+    let mut encoders = None;
+    let clip = if spec.transparent {
+        let (encode, primary) = encode_transparent(&out_dir, spec)?;
+        webm = encode.webm.clone();
+        encoders = Some(encode.support);
+        alpha_checks = encode.checks.clone();
+        primary
+    } else {
+        encode_opaque(&ffmpeg, &out_dir, spec, done)?
+    };
+    Ok(BlenderRender {
+        clip,
+        frames: done,
+        resumed_frames: resumed.min(total),
+        blender_version: info.version,
+        job_dir: out_dir,
+        transparent: spec.transparent,
+        webm,
+        alpha: alpha_checks,
+        encoders,
+    })
+}
+
+fn encode_opaque(
+    ffmpeg: &Path,
+    out_dir: &Path,
+    spec: &AnimationSpec,
+    done: usize,
+) -> Result<PathBuf> {
+    let clip = out_dir.join(clip_name(false));
+    let sequence = frames_dir(out_dir).join("frame_%04d.png");
     let encode_args = vec![
         "-y".to_string(),
         "-hide_banner".to_string(),
@@ -586,9 +717,9 @@ pub fn render_animation_job(
         clip.to_string_lossy().to_string(),
     ];
     let encoded = proc::run(
-        &ffmpeg,
+        ffmpeg,
         &encode_args,
-        &ProcOpts::default().in_dir(&out_dir).with_timeout(600),
+        &ProcOpts::default().in_dir(out_dir).with_timeout(600),
     )?;
     if !encoded.success {
         return Err(render_error(
@@ -603,13 +734,40 @@ pub fn render_animation_job(
         )
         .with_hint("check the frames directory for PNG output"));
     }
-    Ok(BlenderRender {
-        clip,
-        frames: done,
-        resumed_frames: resumed.min(total),
-        blender_version: info.version,
-        job_dir: out_dir,
-    })
+    Ok(clip)
+}
+
+/// Encodes the RGBA frames as ProRes 4444 and alpha WebM, verifying the delivered alpha.
+fn encode_transparent(
+    out_dir: &Path,
+    spec: &AnimationSpec,
+) -> Result<(alpha::AlphaEncode, PathBuf)> {
+    let sequence = frames_pattern(out_dir).to_string_lossy().to_string();
+    let encode = alpha::encode_alpha(&alpha::AlphaEncodeRequest {
+        sequence: &sequence,
+        start_number: spec.frame_start(),
+        fps: spec.fps.max(1),
+        prores: out_dir.join(clip_name(true)),
+        webm: Some(out_dir.join("clip_alpha.webm")),
+    })?;
+    let primary = encode
+        .prores
+        .clone()
+        .or_else(|| encode.webm.clone())
+        .ok_or_else(|| {
+            Error::new(
+                ErrorCode::Unsupported,
+                "no alpha-preserving encoder produced an output for this transparent render",
+            )
+        })?;
+    if std::fs::metadata(&primary).map(|m| m.len()).unwrap_or(0) == 0 {
+        return Err(Error::new(
+            ErrorCode::Render,
+            format!("alpha-preserving clip is empty: {}", primary.display()),
+        )
+        .with_hint("check the frames directory: the RGBA PNGs may be incomplete"));
+    }
+    Ok((encode, primary))
 }
 
 fn tail_of(log: &Path) -> String {
@@ -757,5 +915,71 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let err = render_animation(&AnimationSpec::default(), dir.path()).unwrap_err();
         assert_eq!(err.code, ErrorCode::DependencyMissing);
+    }
+
+    #[test]
+    fn existing_specs_stay_opaque_without_the_new_field() {
+        // A spec written before the transparent flag existed: no "transparent" key at all.
+        let json = r##"{"template":"logo_reveal","text":"CINVAR","duration":5000000000,"width":1920,"height":1080,"fps":30,"color":"#4f8cff"}"##;
+        let spec: AnimationSpec = serde_json::from_str(json).expect("old spec still parses");
+        assert!(!spec.transparent);
+        assert!(script_for(&spec).contains("TRANSPARENT = False"));
+    }
+
+    #[test]
+    fn transparent_spec_writes_rgba_and_film_transparent() {
+        let spec = AnimationSpec {
+            transparent: true,
+            ..AnimationSpec::default()
+        };
+        let script = script_for(&spec);
+        assert!(script.contains("TRANSPARENT = True"), "{script}");
+        assert!(script.contains("scene.render.film_transparent = True"));
+        assert!(script.contains("scene.render.image_settings.color_mode = \"RGBA\""));
+        // The per-frame completeness machinery is unchanged: Blender still writes one PNG per
+        // frame and Rust still validates every one of them.
+        assert!(script.contains("bpy.ops.render.render(animation=True)"));
+        assert!(script.contains("scene.render.use_overwrite = False"));
+        let opaque = script_for(&AnimationSpec::default());
+        assert!(opaque.contains("scene.render.film_transparent = False"));
+        assert!(opaque.contains("scene.render.image_settings.color_mode = \"RGB\""));
+    }
+
+    #[test]
+    fn transparency_is_part_of_the_render_identity() {
+        let opaque = AnimationSpec::default();
+        let transparent = AnimationSpec {
+            transparent: true,
+            ..AnimationSpec::default()
+        };
+        assert_ne!(spec_hash(&opaque), spec_hash(&transparent));
+    }
+
+    #[test]
+    fn transparent_deliverables_have_alpha_aware_names() {
+        assert_eq!(clip_name(false), "clip.mp4");
+        assert_eq!(clip_name(true), "clip_prores4444.mov");
+        let job = Path::new("/tmp/job");
+        assert_eq!(frames_dir(job), Path::new("/tmp/job/frames"));
+        assert_eq!(
+            frames_pattern(job),
+            Path::new("/tmp/job/frames/frame_%04d.png")
+        );
+        let spec = AnimationSpec {
+            fps: 24,
+            ..AnimationSpec::default()
+        };
+        match png_sequence_source(job, &spec) {
+            alpha::OverlaySource::Sequence {
+                pattern,
+                fps,
+                start_number,
+            } => {
+                assert_eq!(pattern, Path::new("/tmp/job/frames/frame_%04d.png"));
+                assert_eq!(fps, 24);
+                assert_eq!(start_number, 1);
+            }
+            other => panic!("unexpected overlay source: {other:?}"),
+        }
     }
 }

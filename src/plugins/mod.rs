@@ -11,6 +11,8 @@ use crate::util::paths;
 use crate::util::proc::{self, ProcOpts};
 
 pub mod registry;
+#[cfg(target_os = "linux")]
+mod seccomp;
 
 pub const MANIFEST_FILE: &str = "plugin.json";
 pub const MAX_CAPTURE: usize = 1024 * 1024;
@@ -330,8 +332,11 @@ pub fn execution_allowed_with(security: &crate::config::Security, sandbox: bool)
 /// Wraps a plugin command in bubblewrap: read-only view of the system, an empty home directory
 /// and an empty CINVAR config directory (so `credentials.toml` is invisible even when it lives
 /// outside `$HOME`), write access only to `writable` (the project; `None` for health checks),
-/// and no network unless the manifest asked for it. Returns `sandboxed == false` when no
-/// sandbox exists; callers must refuse unless the user opted in (`execution_allowed`).
+/// and no network unless the manifest asked for it. A manifest that does ask for network keeps the
+/// host network namespace for egress but gets a seccomp filter that denies `AF_UNIX` sockets, so
+/// host control sockets (abstract `@dbus-*`/`@systemd`/`@docker`, and the files under `/run` that
+/// are masked anyway) stay out of reach. Returns `sandboxed == false` when no sandbox exists;
+/// callers must refuse unless the user opted in (`execution_allowed`).
 pub fn sandbox_command(
     program: &Path,
     rest: &[String],
@@ -385,24 +390,84 @@ pub fn sandbox_command(
         if cfg.is_dir() {
             a.extend(["--tmpfs".into(), s(&cfg)]);
         }
-        if let Some(root) = plugin_root {
+        // Binds are CINVAR's, never the manifest's, and only for directories that already exist
+        // with symlinks resolved: the argv is the sandbox, so a plugin directory that is a symlink
+        // (or a project named "/") must not be able to move a bind somewhere else on the host.
+        let root_bind = plugin_root.and_then(bind_dir);
+        let write_bind = writable
+            .and_then(bind_dir)
+            .filter(|w| !masks_credentials(w));
+        if let Some(root) = &root_bind {
             a.extend(["--ro-bind".into(), s(root), s(root)]);
         }
-        if let Some(w) = writable {
+        if let Some(w) = &write_bind {
             a.extend(["--bind".into(), s(w), s(w)]);
         }
-        if !perms.network {
-            a.push("--unshare-net".into());
+        // Network: the host namespace stays when a manifest asks for it, because masking paths
+        // cannot hide abstract Unix sockets (@dbus-*, @systemd/*, docker) owned by host processes.
+        // A seccomp filter denies creating AF_UNIX sockets instead, so egress keeps working while
+        // host control endpoints do not. Without a usable filter this fails closed to an isolated
+        // network namespace: no network is safer than host reachability.
+        let filter = if perms.network {
+            match (seccomp::filter_file(), proc::which("sh")) {
+                (Some(filter), Some(sh)) => Some((filter, sh)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        match &filter {
+            Some(_) => a.extend(["--seccomp".into(), SECCOMP_FD.into()]),
+            None => a.push("--unshare-net".into()),
         }
-        if let Some(dir) = writable.or(plugin_root) {
-            a.extend(["--chdir".into(), s(dir)]);
+        if let Some(dir) = write_bind.or(root_bind) {
+            a.extend(["--chdir".into(), s(&dir)]);
         }
         a.extend(["--".into(), s(program)]);
         a.extend(rest.iter().cloned());
+        if let Some((filter, sh)) = filter {
+            // bwrap reads a filter only from a descriptor and proc::run cannot hand one over, so a
+            // shell opens the program on SECCOMP_FD and execs bwrap with the same argv.
+            let mut wrapped = vec![
+                "-c".to_string(),
+                SECCOMP_WRAPPER.to_string(),
+                s(&filter),
+                s(&bwrap),
+            ];
+            wrapped.extend(a);
+            return (sh, wrapped, true);
+        }
         return (bwrap, a, true);
     }
     let _ = (plugin_root, perms, writable);
     (program.to_path_buf(), rest.to_vec(), false)
+}
+
+/// Descriptor the wrapper shell opens the seccomp program on; bwrap reads its filter from there.
+#[cfg(target_os = "linux")]
+const SECCOMP_FD: &str = "3";
+
+/// Opens $0 (the filter program) on SECCOMP_FD, then becomes bubblewrap with $@.
+#[cfg(target_os = "linux")]
+const SECCOMP_WRAPPER: &str = "exec 3<\"$0\" || exit 126\nexec \"$@\"";
+
+/// A bind target must be an existing directory and must not be /: binding / writable over the
+/// read-only root would hand the plugin the whole machine. plugin_root and writable are CINVAR's
+/// own paths, but resolving them removes symlink and .. tricks that could aim a bind elsewhere.
+#[cfg(target_os = "linux")]
+fn bind_dir(path: &Path) -> Option<PathBuf> {
+    let canonical = std::fs::canonicalize(path).ok()?;
+    (canonical.is_dir() && canonical != Path::new("/")).then_some(canonical)
+}
+
+/// A project that is (or contains) the CINVAR config directory would mount credentials.toml back
+/// over the tmpfs that hides it, so that writable bind is dropped: failing to write is a plugin
+/// error, leaking the user's API keys is not.
+#[cfg(target_os = "linux")]
+fn masks_credentials(writable: &Path) -> bool {
+    let cfg = crate::util::paths::config_dir();
+    let cfg = std::fs::canonicalize(&cfg).unwrap_or(cfg);
+    cfg.starts_with(writable)
 }
 
 fn resolve_program(plugin_root: Option<&Path>, program: &str) -> Result<PathBuf> {

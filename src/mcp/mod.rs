@@ -352,6 +352,12 @@ fn error_reply(id: Value, code: i64, message: &str) -> Value {
     })
 }
 
+/// Largest single MCP message accepted from a client, framed or newline-delimited. An agent
+/// sends tool calls here; this is far above any legitimate call and far below a size that
+/// would matter to this process. Without it a client could ask for an arbitrarily large
+/// allocation with one header, or grow the read buffer by never sending a newline.
+const MAX_MESSAGE_BYTES: usize = 16 * 1024 * 1024;
+
 /// Read one message from stdin: either a newline-delimited JSON object or a
 /// Content-Length framed body. Returns None at EOF.
 fn read_message<R: BufRead>(reader: &mut R) -> Result<Option<Vec<u8>>> {
@@ -378,6 +384,11 @@ fn read_message<R: BufRead>(reader: &mut R) -> Result<Option<Vec<u8>>> {
                     length = inner;
                 }
             }
+            if length > MAX_MESSAGE_BYTES {
+                return Err(Error::invalid(format!(
+                    "mcp: a framed body of {length} bytes is larger than the {MAX_MESSAGE_BYTES} byte limit"
+                )));
+            }
             let mut body = vec![0u8; length];
             match reader.read_exact(&mut body) {
                 Ok(()) => return Ok(Some(body)),
@@ -392,9 +403,18 @@ fn read_message<R: BufRead>(reader: &mut R) -> Result<Option<Vec<u8>>> {
 }
 
 fn read_line<R: BufRead>(reader: &mut R, buf: &mut Vec<u8>) -> Result<usize> {
-    reader
+    // Bounded: a client that never sends a newline must not be able to grow this buffer without
+    // limit. The extra byte is what makes an over-long line detectable rather than silently cut.
+    let mut limited = std::io::Read::take(&mut *reader, MAX_MESSAGE_BYTES as u64 + 1);
+    let read = limited
         .read_until(b'\n', buf)
-        .map_err(|err| Error::io(format!("mcp: reading from stdin failed: {err}")))
+        .map_err(|err| Error::io(format!("mcp: reading from stdin failed: {err}")))?;
+    if buf.len() > MAX_MESSAGE_BYTES {
+        return Err(Error::invalid(format!(
+            "mcp: a message line exceeds the {MAX_MESSAGE_BYTES} byte limit"
+        )));
+    }
+    Ok(read)
 }
 
 fn trim(bytes: &[u8]) -> &[u8] {
@@ -488,6 +508,31 @@ mod tests {
             r#"{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":1}}"#
         )
         .is_none());
+    }
+
+    #[test]
+    fn an_absurd_content_length_is_refused_before_it_is_allocated() {
+        let raw = b"Content-Length: 1099511627776\r\n\r\n";
+        let mut reader = std::io::BufReader::new(&raw[..]);
+        let err = read_message(&mut reader).expect_err("a one-terabyte body must be refused");
+        assert!(
+            err.message.contains("larger than"),
+            "unexpected message: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn a_message_line_cannot_grow_without_bound() {
+        // No trailing newline: the reader has to stop at the cap instead of buffering all of it.
+        let raw = vec![b'x'; MAX_MESSAGE_BYTES + 64];
+        let mut reader = std::io::BufReader::new(&raw[..]);
+        let err = read_message(&mut reader).expect_err("an unterminated line must be refused");
+        assert!(
+            err.message.contains("exceeds"),
+            "unexpected message: {}",
+            err.message
+        );
     }
 
     #[test]

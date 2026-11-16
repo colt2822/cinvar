@@ -25,6 +25,12 @@ struct Cli {
     #[arg(
         long,
         global = true,
+        help = "Run a Pro-only operation for real, but only the first 10 seconds and with the CINVAR PRO PREVIEW notice burned in (Free edition only; ignored when licensed)"
+    )]
+    pro_preview: bool,
+    #[arg(
+        long,
+        global = true,
         value_name = "DIR",
         help = "Project directory (defaults to the current directory)"
     )]
@@ -67,6 +73,11 @@ enum Commands {
     Setup {
         #[arg(long, help = "Accept defaults without prompting")]
         yes: bool,
+        #[arg(
+            long,
+            help = "Install and configure the Pro AI stack (WhisperX, faster-whisper, Real-ESRGAN, Demucs) into managed virtualenvs"
+        )]
+        pro_ai: bool,
     },
     #[command(
         about = "Connect an AI assistant (Claude Code) to a CINVAR project: creates the project, imports footage, writes the MCP config"
@@ -157,6 +168,73 @@ enum Commands {
         #[arg(long, help = "Block until the render finishes")]
         wait: bool,
     },
+    #[command(about = "Build a semantic scene index for footage in a folder (local vision model when available)")]
+    Analyze {
+        #[arg(long, help = "Folder of raw footage")]
+        media_root: PathBuf,
+        #[arg(long, help = "Project folder whose cache stores the scene index")]
+        project: Option<PathBuf>,
+        #[arg(long, default_value = "gemma3:4b", help = "Ollama vision model name")]
+        model: String,
+        #[arg(long, default_value = "http://localhost:11434", help = "Ollama base URL")]
+        ollama_url: String,
+    },
+    #[command(about = "Search the project's scene index with free text")]
+    Scenes {
+        #[arg(help = "What to look for, e.g. \"someone celebrating\"")]
+        query: String,
+    },
+    #[command(about = "Detect scenes in one video with PySceneDetect (needs CINVAR_SCENEDETECT_PYTHON venv)")]
+    ScenesDetect {
+        #[arg(value_name = "VIDEO")]
+        video: PathBuf,
+        #[arg(long, default_value = "content", help = "content or adaptive detector")]
+        detector: String,
+        #[arg(long, help = "Detector threshold (default: detector default)")]
+        threshold: Option<f64>,
+    },
+    #[command(
+        about = "Autonomous highlight reel: analyse footage in a folder, pick the best moments, build a timeline, render, inspect and correct"
+    )]
+    AutoEdit {
+        #[arg(long, help = "Folder of raw footage")]
+        media_root: PathBuf,
+        #[arg(long, default_value_t = 60.0, help = "Target runtime in seconds")]
+        target_secs: f64,
+        #[arg(long, help = "Vertical 1080x1920 canvas for Shorts/Reels")]
+        vertical: bool,
+        #[arg(long, help = "Opening title overlay text")]
+        title: Option<String>,
+        #[arg(long, default_value_t = 2.0, help = "Shortest clip to select (seconds)")]
+        min_clip: f64,
+        #[arg(long, default_value_t = 6.0, help = "Longest clip to select (seconds)")]
+        max_clip: f64,
+        #[arg(long, value_name = "FILE", help = "Output file (default: project renders dir)")]
+        output: Option<PathBuf>,
+        #[arg(long, help = "Creative instruction, e.g. \"the loudest celebrations\" (needs a scene index from cinvar analyze)")]
+        instruction: Option<String>,
+        #[arg(long, help = "Transcribe speech and burn captions")]
+        captions: bool,
+        #[arg(long, help = "Remove dead air inside selected clips via Auto-Editor (needs CINVAR_AUTOEDITOR_PYTHON or auto-editor on PATH)")]
+        silence_removal: bool,
+        #[arg(long, default_value = "social", help = "Caption preset: subtitles, social, documentary, cinematic")]
+        caption_preset: String,
+        #[arg(long, value_name = "ENGINE", help = "Caption engine: auto (default) or whisperx (needs CINVAR_WHISPERX_PYTHON)")]
+        engine: Option<String>,
+        #[arg(long, default_value = "srt", value_name = "srt|ass", help = "Caption burn-in: srt (default, drawtext) or ass (libass karaoke track)")]
+        style: String,
+        #[arg(long, help = "Highlight each word as it is spoken (needs --style ass and --engine whisperx)")]
+        word_highlight: bool,
+        #[arg(long, default_value_t = 2, help = "Max inspect/correct/render revisions")]
+        max_revisions: u32,
+        #[arg(long, help = "Subject-aware reframe of the final render (FastERRCNN tracking; needs CINVAR_TRACK_PYTHON)")]
+        reframe: bool,
+    },
+    #[command(about = "Audio source separation and cleanup (Demucs; needs CINVAR_DEMUCS_PYTHON venv)")]
+    Audio {
+        #[command(subcommand)]
+        cmd: AudioCmd,
+    },
     #[command(about = "Show project status, jobs and validation issues")]
     Status,
     #[command(about = "Validate a rendered file against the project (ffprobe checks, no model)")]
@@ -174,10 +252,42 @@ enum Commands {
         #[command(subcommand)]
         cmd: MediaCmd,
     },
+    #[command(about = "Upscale a video with Real-ESRGAN (needs CINVAR_ESRGAN_PYTHON venv)")]
+    Enhance {
+        #[arg(value_name = "VIDEO")]
+        input: PathBuf,
+        #[arg(long, default_value_t = 4, help = "Upscale factor (2 or 4)")]
+        upscale: u32,
+        #[arg(value_name = "FILE", help = "Output file (default: <input>.upscaled.mp4)")]
+        output: Option<PathBuf>,
+        #[arg(long, help = "ncnn tile size (e.g. 256) for VRAM safety; omit for auto")]
+        tile: Option<u32>,
+    },
+    #[command(about = "Subject-aware reframe to vertical/square (needs CINVAR_TRACK_PYTHON venv with FastERRCNN weights cached)")]
+    Reframe {
+        #[arg(value_name = "VIDEO")]
+        input: PathBuf,
+        #[arg(value_name = "FILE", help = "Output file (default: <input>.reframed.mp4)")]
+        output: Option<PathBuf>,
+        #[arg(long, default_value = "vertical", help = "Target aspect: vertical (9:16), square (1:1), landscape (16:9)")]
+        target: String,
+        #[arg(long, default_value_t = 4.0, help = "Frame sampling rate for tracking (fps); 4 fps recommended — higher sampling beats smoothing")]
+        sample_fps: f64,
+    },
     #[command(about = "List and read creative skills")]
     Skills {
         #[command(subcommand)]
         cmd: SkillsCmd,
+    },
+    #[command(about = "Show the active edition (Free/Pro), its limits and license state")]
+    Edition {
+        #[command(subcommand)]
+        cmd: EditionCmd,
+    },
+    #[command(about = "Call any CINVAR tool directly (the same validated tools agents use)")]
+    Tool {
+        #[command(subcommand)]
+        cmd: ToolCmd,
     },
     #[command(about = "List installed plugins")]
     Plugins {
@@ -199,8 +309,54 @@ enum Commands {
         #[command(subcommand)]
         cmd: OtioCmd,
     },
+    #[command(about = "Blender: render animations locally or across worker machines, and report render devices")]
+    Blender {
+        #[command(subcommand)]
+        cmd: BlenderCmd,
+    },
     #[command(about = "Measure startup and render timings on this machine")]
     Bench,
+    #[command(
+        about = "Turn one long video into finished vertical Shorts (highlight selection, subject-tracked 9:16 reframe, word-highlighted captions, QA)"
+    )]
+    Shorts {
+        #[arg(value_name = "INPUT", help = "Long-form source video")]
+        input: PathBuf,
+        #[arg(long, default_value_t = 5, help = "How many Shorts to produce")]
+        count: u32,
+        #[arg(
+            long,
+            default_value = "30-60",
+            help = "Per-Short duration bounds in seconds: 30-60, or a single number"
+        )]
+        duration: String,
+        #[arg(long, value_name = "DIR", help = "Output directory (default: <project>/shorts)")]
+        output: Option<PathBuf>,
+        #[arg(
+            long,
+            value_name = "WORDS",
+            help = "Comma-separated custom vocabulary (brand names, technical terms) for transcription"
+        )]
+        vocab: Option<String>,
+        #[arg(long, value_name = "FILE", help = "Also write the JSON report here")]
+        report: Option<PathBuf>,
+    },
+    #[command(about = "Activate CINVAR Pro from an order key or a license file")]
+    Activate {
+        #[arg(
+            value_name = "ORDER-KEY-OR-FILE",
+            help = "Order key from the checkout email, or the path to a license .json file"
+        )]
+        key: Option<String>,
+        #[arg(long, value_name = "FILE", help = "Import a license file explicitly")]
+        file: Option<PathBuf>,
+        #[arg(
+            long,
+            value_name = "URL",
+            help = "License redemption service for an order key (overrides [edition] redeem_url and CINVAR_LICENSE_REDEEM_URL)"
+        )]
+        redeem_url: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -291,6 +447,33 @@ enum MediaCmd {
 enum SkillsCmd {
     List,
     Show { name: String },
+}
+
+#[derive(Subcommand, Debug)]
+enum ToolCmd {
+    #[command(about = "List available tool names (edition-specific tools appear only when present)")]
+    List,
+    #[command(about = "Call a tool with JSON arguments; --wait blocks until background jobs finish")]
+    Call {
+        name: String,
+        #[arg(long, default_value = "{}", help = "JSON object of arguments")]
+        args: String,
+        #[arg(long, help = "Wait for any background jobs the call started")]
+        wait: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum EditionCmd {
+    #[command(about = "Print edition, enforcement mode, export limit and license state")]
+    Status,
+    #[command(about = "Install a CINVAR Pro license file (verified offline; no account or network)")]
+    Activate {
+        #[arg(long, help = "Path to the license.json you received")]
+        file: PathBuf,
+    },
+    #[command(about = "Remove the installed license and return to Free")]
+    Deactivate,
 }
 
 #[derive(Subcommand, Debug)]
@@ -452,8 +635,37 @@ pub fn run() -> i32 {
 
 fn dispatch(cli: &Cli) -> Result<()> {
     let json_mode = cli.json;
+    // Propagated like --json: every gate that has a preview surface reads it.
+    let pro_preview = cli.pro_preview;
     match &cli.command {
-        Commands::Setup { yes } => cmd_setup(*yes, json_mode),
+        Commands::Blender { cmd } => cmd_blender(cmd, json_mode),
+        Commands::Setup { yes, pro_ai } => cmd_setup(*yes, *pro_ai, json_mode),
+        Commands::Shorts {
+            input,
+            count,
+            duration,
+            output,
+            vocab,
+            report,
+        } => cmd_shorts(
+            input,
+            *count,
+            duration,
+            output.as_deref(),
+            vocab.as_deref(),
+            report.as_deref(),
+            json_mode,
+        ),
+        Commands::Activate {
+            key,
+            file,
+            redeem_url,
+        } => cmd_activate(
+            key.as_deref(),
+            file.as_deref(),
+            redeem_url.as_deref(),
+            json_mode,
+        ),
         Commands::Connect {
             client,
             project,
@@ -694,6 +906,77 @@ fn dispatch(cli: &Cli) -> Result<()> {
             range.clone(),
             *wait,
             json_mode,
+            pro_preview,
+        ),
+        Commands::Analyze {
+            media_root,
+            project,
+            model,
+            ollama_url,
+        } => {
+            // Enforced before the index is built: a Free project never gets a partial index.
+            let clips = crate::tools::count_indexable_clips(media_root);
+            crate::edition::resolve_from_disk().check_semantic_clips(clips)?;
+            let dir = match project {
+                Some(dir) => {
+                    let abs = paths::absolutize(&dir, &cwd());
+                    if abs.join("project.json").exists() {
+                        ProjectStore::open(&abs)?
+                    } else {
+                        // Customer pointed at their own directory (possibly
+                        // created by `setup --project`): initialize IN it, do
+                        // not silently invent a sibling `name-2`.
+                        let name = abs
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "Semantic Index".to_string());
+                        ProjectStore::create_at(&abs, &name)?.0
+                    }
+                }
+                None => resolve_project(cli.project.as_deref())?,
+            };
+            cmd_analyze(&media_root, &dir, &model, &ollama_url, json_mode)
+        }
+        Commands::Scenes { query } => cmd_scenes_search(&query, cli.project.as_deref(), json_mode),
+        Commands::ScenesDetect { video, detector, threshold } => {
+            cmd_scenes_detect(&video, &detector, *threshold, json_mode)
+        }
+        Commands::AutoEdit {
+            media_root,
+            target_secs,
+            vertical,
+            title,
+            min_clip,
+            max_clip,
+            output,
+            instruction,
+            captions,
+            silence_removal,
+            caption_preset,
+            engine,
+            style,
+            word_highlight,
+            max_revisions,
+            reframe,
+        } => cmd_autoedit(
+            &media_root,
+            *target_secs,
+            *vertical,
+            title.as_deref(),
+            *min_clip,
+            *max_clip,
+            output.clone(),
+            instruction.as_deref(),
+            *captions,
+            *silence_removal,
+            &caption_preset,
+            engine.as_deref(),
+            style,
+            *word_highlight,
+            *max_revisions,
+            *reframe,
+            cli.project.as_deref(),
+            json_mode,
         ),
         Commands::Status => cmd_status(cli.project.as_deref(), json_mode),
         Commands::Qa { file } => {
@@ -720,7 +1003,109 @@ fn dispatch(cli: &Cli) -> Result<()> {
         }
         Commands::Jobs { cmd } => cmd_jobs(cmd, json_mode),
         Commands::Media { cmd } => cmd_media(cmd, json_mode),
+        Commands::Enhance { input, upscale, output, tile } => {
+            cmd_enhance(&input, *upscale, output.as_deref(), *tile, json_mode, pro_preview)
+        }
+        Commands::Reframe { input, output, target, sample_fps } => {
+            // Subject-tracking reframing is a Pro capability (the Free path is a static crop).
+            crate::edition::resolve_from_disk()
+                .check_feature(crate::edition::Feature::ReframeTracking)?;
+            cmd_reframe(&input, output.as_deref(), target, *sample_fps, json_mode)
+        }
+        Commands::Audio { cmd } => {
+            // Demucs stem separation and cleaned mixes are a Pro capability.
+            crate::edition::resolve_from_disk().check_feature(crate::edition::Feature::AudioStems)?;
+            cmd_audio(cmd, json_mode)
+        }
         Commands::Skills { cmd } => cmd_skills(cmd, json_mode),
+        Commands::Edition { cmd } => match cmd {
+            EditionCmd::Activate { file } => {
+                let lic = crate::edition::license::install(
+                    &file,
+                    &crate::edition::license::default_path(),
+                    crate::edition::license::production_keys(),
+                )?;
+                out(
+                    json_mode,
+                    serde_json::json!({"activated": true, "license_id": lic.id, "grandfathered": lic.grandfathered}),
+                    || format!("CINVAR Pro license {} installed", lic.id),
+                )
+            }
+            EditionCmd::Deactivate => {
+                let removed = crate::edition::license::remove(&crate::edition::license::default_path())?;
+                out(json_mode, serde_json::json!({"removed": removed}), || {
+                    if removed { "license removed; running as CINVAR Free".to_string() } else { "no license installed".to_string() }
+                })
+            }
+            EditionCmd::Status => {
+                let config = crate::config::Config::load().unwrap_or_default();
+                let ent = crate::edition::resolve(&config);
+                let summary = ent.summary();
+                out(json_mode, summary.clone(), || {
+                    let limit = ent.export_limit();
+                    // Report what the gates will actually do, not whether the config file happens
+                    // to set [edition] enforce: a release build enforces without that flag.
+                    let enforcement = match ent.enforcement {
+                        crate::edition::Enforcement::Enforce => "enforce",
+                        crate::edition::Enforcement::Observe => "observe (no gate refuses)",
+                    };
+                    let mut text = format!(
+                        "edition: {}\nenforcement: {enforcement}\nexport limit: {}\nlicense: {}",
+                        ent.edition.as_str(),
+                        limit,
+                        serde_json::to_string(&ent.source).unwrap_or_default()
+                    );
+                    if config.edition.enforce {
+                        text.push_str("\nnote: [edition] enforce = true in the config tightens the default");
+                    }
+                    if ent.edition == crate::edition::Edition::Free {
+                        text.push_str(&format!(
+                            "\nupgrade: {} (or try any Pro capability once with --pro-preview)",
+                            crate::edition::UPGRADE_URL
+                        ));
+                    }
+                    text
+                })
+            }
+        },
+        Commands::Tool { cmd } => match cmd {
+            ToolCmd::List => {
+                let registry = crate::tools::build_with_plugins(&crate::config::Config::load().unwrap_or_default());
+                let names: Vec<String> = registry.specs().into_iter().map(|s| s.name).collect();
+                out(json_mode, json!({"tools": names}), || names.join("\n"))
+            }
+            ToolCmd::Call { name, args, wait } => {
+                let config = crate::config::Config::load().unwrap_or_default();
+                let registry = crate::tools::build_with_plugins(&config);
+                let store = resolve_project(cli.project.as_deref())?;
+                let mut project = store.load()?;
+                let jobs = crate::jobs::Jobs::new();
+                let mut history = crate::project::history::History::default();
+                let parsed: serde_json::Value = serde_json::from_str(args)
+                    .map_err(|e| Error::invalid(format!("--args is not valid JSON: {e}")))?;
+                let mut ctx = crate::tools::ToolCtx {
+                    project: &mut project,
+                    store: &store,
+                    config: &config,
+                    jobs: &jobs,
+                    history: &mut history,
+                    dry_run: false,
+                };
+                let value = registry.call(name, &mut ctx, parsed)?;
+                let mut failed = false;
+                if *wait {
+                    for job in jobs.list() {
+                        let done = jobs.wait(&job.id, std::time::Duration::from_secs(24 * 3600));
+                        failed |= done.map(|j| j.status != crate::jobs::JobStatus::Succeeded).unwrap_or(true);
+                    }
+                }
+                out(json_mode, value.clone(), || serde_json::to_string_pretty(&value).unwrap_or_default())?;
+                if failed {
+                    return Err(Error::new(ErrorCode::Render, "a background job did not succeed"));
+                }
+                Ok(())
+            }
+        },
         Commands::Plugins { cmd } => cmd_plugins(cmd, json_mode),
         Commands::Mcp { cmd } => match cmd {
             McpCmd::Serve => {
@@ -743,10 +1128,34 @@ fn dispatch(cli: &Cli) -> Result<()> {
                 let store = resolve_project(cli.project.as_deref())?;
                 let project = store.load()?;
                 let out_path = paths::absolutize(output, &cwd());
+                let grant = crate::edition::resolve_from_disk().gate_feature(
+                    crate::edition::Feature::OtioExport,
+                    pro_preview,
+                )?;
                 let report = crate::otio::export_otio(&project, None, &out_path)?;
-                out(json_mode, json!(report), || {
-                    format!("wrote {}", out_path.display())
-                })
+                // A timeline file is an asset, not a video: the preview marker is a sidecar.
+                let marker = if grant.is_preview() {
+                    Some(crate::render::preview::write_marker(&out_path)?)
+                } else {
+                    None
+                };
+                let marker_path = marker.as_ref().map(|m| m.to_string_lossy().to_string());
+                // The report keeps its shape: the preview only adds fields to it.
+                let mut payload = serde_json::to_value(&report)?;
+                payload["pro_preview"] = json!(grant.is_preview());
+                payload["marker"] = json!(marker_path);
+                out(
+                    json_mode,
+                    payload,
+                    || match &marker {
+                        Some(m) => format!(
+                            "wrote {} (PRO PREVIEW - see {})",
+                            out_path.display(),
+                            m.display()
+                        ),
+                        None => format!("wrote {}", out_path.display()),
+                    },
+                )
             }
         },
         Commands::Bench => cmd_bench(),
@@ -881,7 +1290,32 @@ fn cmd_connect(
     )
 }
 
-fn cmd_setup(yes: bool, json_mode: bool) -> Result<()> {
+fn cmd_setup(yes: bool, pro_ai: bool, json_mode: bool) -> Result<()> {
+    if pro_ai {
+        let report = crate::setup::pro_ai(json_mode)?;
+        return out(
+            json_mode,
+            serde_json::to_value(&report).unwrap_or(serde_json::Value::Null),
+            || {
+                let mut text = String::from("CINVAR Pro AI setup\n\n");
+                for c in &report.components {
+                    text.push_str(&format!(
+                        "  {:<14} {:<8} {}\n",
+                        c.component,
+                        if c.installed { "ready" } else { "FAILED" },
+                        if c.problem.is_empty() { c.venv.clone() } else { c.problem.clone() }
+                    ));
+                }
+                text.push_str(&format!("\n  config  {}\n", report.config_path));
+                text.push_str(if report.complete {
+                    "\nAll Pro AI components are configured. No environment variables needed.\n"
+                } else {
+                    "\nSome components failed; fix the problems above and re-run setup --pro-ai.\n"
+                });
+                text
+            },
+        );
+    }
     let report = doctor_report();
     let mut config = Config::load().unwrap_or_default();
     if config.models.is_empty() {
@@ -1191,6 +1625,565 @@ fn wait_for_outstanding_jobs(jobs: &Jobs) {
     }
 }
 
+use crate::util::time::Time;
+use crate::project::ops as ops_mod;
+
+fn render_now(
+    store: &ProjectStore,
+    project: &Project,
+    output_path: PathBuf,
+) -> Result<serde_json::Value> {
+    let mut request = crate::render::RenderRequest::for_output(output_path.clone());
+    let jobs = Jobs::new();
+    let store_for_job = store.clone();
+    let project_for_job = project.clone();
+    let job_id = jobs.spawn("render", move |job| {
+        let progress = |p: f32, message: &str| job.progress(p, message);
+        let cancelled = || job.cancelled();
+        crate::render::render(&project_for_job, &store_for_job, &request, &progress, &cancelled)
+            .map(|outcome| json!(outcome))
+    });
+    let snapshot = jobs
+        .wait(&job_id, std::time::Duration::from_secs(7_200))
+        .ok_or_else(|| Error::internal("render job disappeared"))?;
+    match snapshot.status {
+        crate::jobs::JobStatus::Succeeded => Ok(snapshot.output.unwrap_or_else(|| json!({}))),
+        _ => {
+            let message = snapshot
+                .error
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "render failed".into());
+            Err(Error::new(ErrorCode::Render, crate::secrets::redact(&message)))
+        }
+    }
+}
+
+fn cmd_analyze(
+    media_root: &Path,
+    store: &ProjectStore,
+    model: &str,
+    ollama_url: &str,
+    json_mode: bool,
+) -> Result<()> {
+    let opts = crate::analysis::semantic::IndexOptions {
+        ollama_url: ollama_url.to_string(),
+        model: model.to_string(),
+    };
+    let index = crate::analysis::semantic::index_media(media_root, &opts)?;
+    let path = store.cache_dir().join("semantic-index.json");
+    index.save(&path)?;
+    let vision_note = if index.vision_available {
+        format!("described by local vision model {}", index.model)
+    } else {
+        "no vision model reachable; deterministic descriptors only (NOT model understanding)".to_string()
+    };
+    out(json_mode, json!({
+        "index": path.display().to_string(),
+        "segments": index.segments.len(),
+        "vision_available": index.vision_available,
+        "model": index.model,
+        "sources": index.segments.iter().map(|s| s.source.clone()).collect::<std::collections::BTreeSet<_>>(),
+    }), || {
+        let mut text = format!(
+            "indexed {} segment(s) from {} - {}\nindex: {}\n",
+            index.segments.len(),
+            media_root.display(),
+            vision_note,
+            path.display()
+        );
+        for seg in index.segments.iter().take(8) {
+            text.push_str(&format!(
+                "  {:.1}-{:.1}s {} [{}] {}\n",
+                seg.start, seg.end, seg.file_name, seg.source, seg.description
+            ));
+        }
+        if index.segments.len() > 8 {
+            text.push_str(&format!("  ... {} more\n", index.segments.len() - 8));
+        }
+        text
+    });
+    Ok(())
+}
+
+fn cmd_scenes_detect(
+    video: &Path,
+    detector: &str,
+    threshold: Option<f64>,
+    json_mode: bool,
+) -> Result<()> {
+    let detector = crate::analysis::pyscenedetect::Detector::parse(detector)?;
+    let work_dir = std::env::temp_dir().join("cinvar-scenedetect");
+    let report = crate::analysis::pyscenedetect::detect(video, detector, threshold, &work_dir)?;
+    if json_mode {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!(
+            "scenes: {} ({}, fps {:.2}, {}x{})",
+            report.scenes.len(),
+            report.detector,
+            report.fps,
+            report.width,
+            report.height
+        );
+        for s in &report.scenes {
+            println!("{:>8.2}s - {:>8.2}s  (frames {}-{})", s.start_sec, s.end_sec, s.start_frame, s.end_frame);
+        }
+    }
+    Ok(())
+}
+
+fn cmd_scenes_search(
+    query: &str,
+    explicit: Option<&Path>,
+    json_mode: bool,
+) -> Result<()> {
+    let store = resolve_project(explicit)?;
+    let index = crate::analysis::semantic::SceneIndex::load(&store.cache_dir().join("semantic-index.json"))?;
+    let hits = crate::analysis::semantic::search(&index, query);
+    if hits.is_empty() {
+        return Err(Error::invalid(format!(
+            "no indexed footage matches \"{query}\""
+        ))
+        .with_hint("index more footage with cinvar analyze, or rephrase the query"));
+    }
+    let payload: Vec<serde_json::Value> = hits
+        .iter()
+        .take(20)
+        .map(|(i, score)| {
+            let seg = &index.segments[*i];
+            json!({
+                "segment_id": seg.id,
+                "file": seg.file,
+                "start": seg.start,
+                "end": seg.end,
+                "score": score,
+                "description": seg.description,
+                "subjects": seg.subjects,
+                "source": seg.source,
+            })
+        })
+        .collect();
+    out(json_mode, json!(payload), || {
+        let mut text = String::new();
+        for (i, score) in hits.iter().take(10) {
+            let seg = &index.segments[*i];
+            text.push_str(&format!(
+                "{score:.2}  {} {:.1}-{:.1}s [{}] {}\n",
+                seg.file_name, seg.start, seg.end, seg.source, seg.description
+            ));
+        }
+        text
+    });
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_autoedit(
+    media_root: &Path,
+    target_secs: f64,
+    vertical: bool,
+    title: Option<&str>,
+    min_clip: f64,
+    max_clip: f64,
+    output: Option<PathBuf>,
+    instruction: Option<&str>,
+    captions: bool,
+    silence_removal: bool,
+    caption_preset: &str,
+    engine: Option<&str>,
+    style: &str,
+    word_highlight: bool,
+    max_revisions: u32,
+    reframe: bool,
+    explicit: Option<&Path>,
+    json_mode: bool,
+) -> Result<()> {
+    if !matches!(style, "srt" | "ass") {
+        return Err(crate::error::Error::invalid("--style must be srt or ass").into());
+    }
+    if style == "ass" && !captions {
+        return Err(crate::error::Error::invalid("--style ass needs --captions").into());
+    }
+    // Pro caption/reframe capabilities, refused before any analysis work starts.
+    let entitlements = crate::edition::resolve_from_disk();
+    if matches!(engine, Some("whisperx")) {
+        entitlements.check_feature(crate::edition::Feature::CaptionsWordLevel)?;
+    }
+    if style == "ass" || word_highlight {
+        entitlements.check_feature(crate::edition::Feature::CaptionsKaraoke)?;
+    }
+    if reframe {
+        entitlements.check_feature(crate::edition::Feature::ReframeTracking)?;
+    }
+    let opts = crate::analysis::autoedit::AutoEditOptions {
+        target_secs: target_secs.max(1.0),
+        min_clip: min_clip.max(0.5),
+        max_clip: max_clip.max(min_clip),
+        vertical,
+        title: title.map(|t| t.to_string()),
+        instruction: instruction.map(|t| t.to_string()),
+        captions,
+        silence_removal,
+    };
+    let name_hint = media_root
+        .file_name()
+        .map(|n| format!("AutoEdit {}", n.to_string_lossy()))
+        .unwrap_or_else(|| "AutoEdit Reel".to_string());
+    let (store, mut project) = match explicit {
+        Some(dir) => {
+            let abs = paths::absolutize(dir, &cwd());
+            if abs.join("project.json").exists() {
+                let store = ProjectStore::open(&abs)?;
+                let project = store.load()?;
+                (store, project)
+            } else {
+                let name = abs
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| name_hint.clone());
+                if abs.exists() {
+                    // Customer pointed at their own directory (possibly created
+                    // by `setup --project`): initialize IN it, do not silently
+                    // invent a sibling `name-2`.
+                    ProjectStore::create_at(&abs, &name)?
+                } else {
+                    ProjectStore::create(&abs.parent().unwrap_or(&abs), &name)?
+                }
+            }
+        }
+        None => resolve_or_create_project(None, &name_hint)?,
+    };
+
+    let (plan, clip_ids) = crate::analysis::autoedit::auto_edit(&store, &mut project, media_root, &opts)?;
+    let mut captions_outcome: Option<crate::analysis::autoedit::CaptionOutcome> = None;
+    if captions {
+        captions_outcome =
+            Some(crate::analysis::autoedit::generate_captions_with(
+                &store,
+                &mut project,
+                &clip_ids,
+                None,
+                caption_preset,
+                vertical,
+                engine.unwrap_or("auto"),
+            )?);
+        store.save(&mut project)?;
+    }
+    let revisions_root = store.renders_dir();
+
+    let output_path = match output {
+        Some(path) => paths::absolutize(&path, &cwd()),
+        None => revisions_root.join(format!(
+            "{}-autoedit-r{}.mp4",
+            crate::util::text::slugify(&project.name),
+            project.revision
+        )),
+    };
+
+    let mut corrections: Vec<String> = Vec::new();
+    let mut render_passes = 0u32;
+    let mut report;
+    let mut current_output = output_path.clone();
+    // --style ass: drawtext captions are suppressed and the libass track is burned after render.
+    let ass_mode = style == "ass";
+    let ass_style = crate::captions::ass::AssStyle {
+        word_highlight,
+        ..Default::default()
+    };
+    let ass_lines = captions_outcome.as_ref().map(|c| c.lines.clone()).unwrap_or_default();
+    loop {
+        render_passes += 1;
+        eprintln!("render pass {render_passes}: {}", current_output.display());
+        if ass_mode {
+            let saved = std::mem::take(&mut project.captions);
+            let rendered = render_now(&store, &project, current_output.clone());
+            project.captions = saved;
+            rendered?;
+            crate::captions::ass::burn_track(
+                &ass_lines,
+                plan.width as u32,
+                plan.height as u32,
+                &ass_style,
+                &current_output,
+            )?;
+        } else {
+            render_now(&store, &project, current_output.clone())?;
+        }
+        report = crate::qa::validate_render(&project, &store, &current_output)?;
+        if report.passed || render_passes > max_revisions {
+            break;
+        }
+        // Plan one correction round from the failing checks, then re-render.
+        let mut changed = false;
+        for check in &report.checks {
+            if check.passed {
+                continue;
+            }
+            match check.name.as_str() {
+                "black_flash" => {
+                    // A clip ends a frame early: shave a hair off its source out
+                    // point so the boundary never exposes the black frame.
+                    let flash = check
+                        .detail
+                        .split("at ")
+                        .nth(1)
+                        .and_then(|rest| rest.split(&['s', ',', ' '][..]).next())
+                        .and_then(|tok| tok.parse::<f64>().ok())
+                        .unwrap_or(0.0);
+                    if let Some(timeline) = project.timeline() {
+                        let victim = timeline
+                            .tracks
+                            .iter()
+                            .flat_map(|t| t.clips.iter())
+                            .filter(|c| c.asset.is_some())
+                            .find(|c| {
+                                let start = c.timeline_start.as_secs_f64();
+                                let end = start + c.duration().as_secs_f64();
+                                flash >= start - 0.05 && flash <= end
+                            })
+                            .map(|c| c.id.clone());
+                        if let Some(clip_id) = victim {
+                            let (new_out, new_dur) = {
+                                let clip = project.clip(&clip_id).unwrap();
+                                (
+                                    clip.source_out - Time::from_secs_f64(0.05),
+                                    clip.duration().as_secs_f64(),
+                                )
+                            };
+                            if new_dur > 0.5 {
+                                ops_mod::trim_clip(&mut project, &clip_id, None, Some(new_out))?;
+                                corrections.push(format!(
+                                    "black_flash at {flash:.2}s: trimmed {clip_id} out point by 0.05 s"
+                                ));
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                "audio_levels" => {
+                    if check.detail.contains("clipping") || check.detail.contains("max 0") {
+                        for clip_id in clip_ids.iter() {
+                            let _ = ops_mod::set_clip_audio(
+                                &mut project,
+                                clip_id,
+                                Some(-6.0),
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                            );
+                        }
+                        corrections.push("audio clipping: applied -6 dB to every reel clip".to_string());
+                    } else {
+                        for clip_id in clip_ids.iter() {
+                            let _ = ops_mod::set_clip_audio(
+                                &mut project,
+                                clip_id,
+                                Some(6.0),
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                            );
+                        }
+                        corrections.push("audio too quiet: applied +6 dB to every reel clip".to_string());
+                    }
+                    changed = true;
+                }
+                "frozen_frames" => {
+                    // Frozen footage inside a reel clip: skip the frozen span.
+                    // "0.57-6.00s" style detail gives the span; if it starts at
+                    // the clip head advance the in point (ripple), if it ends
+                    // the clip trim the out point, otherwise split trim both.
+                    let span = check
+                        .detail
+                        .split("at ")
+                        .nth(1)
+                        .map(|rest| rest.split(' ').next().map(|s| s.to_string()))
+                        .flatten();
+                    let (frozen_start, frozen_end) = span
+                        .map(|s| {
+                            let mut it = s.trim_end_matches('s').split('-');
+                            (
+                                it.next().and_then(|t| t.parse::<f64>().ok()).unwrap_or(0.0),
+                                it.next().and_then(|t| t.parse::<f64>().ok()),
+                            )
+                        })
+                        .unwrap_or((0.0, None));
+                    if let Some(timeline) = project.timeline() {
+                        let victims: Vec<(String, f64, f64, Time)> = timeline
+                            .tracks
+                            .iter()
+                            .flat_map(|t| t.clips.iter())
+                            .filter(|c| c.asset.is_some())
+                            .filter(|c| {
+                                let start = c.timeline_start.as_secs_f64();
+                                let end = start + c.duration().as_secs_f64();
+                                frozen_start < end
+                                    && frozen_end.map(|fe| fe > start).unwrap_or(true)
+                            })
+                            .map(|c| {
+                                (
+                                    c.id.clone(),
+                                    c.timeline_start.as_secs_f64(),
+                                    c.duration().as_secs_f64(),
+                                    c.source_in,
+                                )
+                            })
+                            .collect();
+                        for (clip_id, clip_start, dur, source_in) in victims {
+                            let clip_freeze_start =
+                                (frozen_start - clip_start).max(0.0);
+                            let clip_freeze_end = frozen_end
+                                .map(|fe| (fe - clip_start).min(dur))
+                                .unwrap_or(dur);
+                            let new_dur = dur - (clip_freeze_end - clip_freeze_start);
+                            if new_dur < 0.5 {
+                                continue;
+                            }
+                            if clip_freeze_start <= 0.05 {
+                                // Frozen head: advance the in point, ripple left.
+                                let new_in = source_in + Time::from_secs_f64(clip_freeze_end);
+                                let _ = ops_mod::trim_clip_ripple(
+                                    &mut project,
+                                    &clip_id,
+                                    Some(new_in),
+                                    None,
+                                )?;
+                                corrections.push(format!(
+                                    "frozen_frames at {frozen_start:.2}s: skipped {:.2}s of frozen head on {clip_id} (ripple)",
+                                    clip_freeze_end
+                                ));
+                                changed = true;
+                            } else if clip_freeze_end >= dur - 0.05 {
+                                // Frozen tail: cut the out point and ripple the
+                                // later clips left so no black gap opens.
+                                let new_out = source_in + Time::from_secs_f64(clip_freeze_start);
+                                let _ = ops_mod::trim_clip_ripple(
+                                    &mut project,
+                                    &clip_id,
+                                    None,
+                                    Some(new_out),
+                                )?;
+                                corrections.push(format!(
+                                    "frozen_frames at {frozen_start:.2}s: trimmed {clip_id} to end before the freeze (ripple)"
+                                ));
+                                changed = true;
+                            } else {
+                                // Frozen middle: keep the head, drop the rest,
+                                // ripple later clips left into the gap.
+                                let new_out = source_in + Time::from_secs_f64(clip_freeze_start);
+                                let _ = ops_mod::trim_clip_ripple(
+                                    &mut project,
+                                    &clip_id,
+                                    None,
+                                    Some(new_out),
+                                )?;
+                                corrections.push(format!(
+                                    "frozen_frames at {frozen_start:.2}s: trimmed {clip_id} to end before the freeze (ripple)"
+                                ));
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                "dead_air" => {
+                    // Dead air inside the reel usually means a silent source window;
+                    // fade it out audibly so the dead stretch reads as an intentional pause.
+                    for clip_id in clip_ids.iter() {
+                        let _ = ops_mod::set_clip_audio(
+                            &mut project,
+                            clip_id,
+                            None,
+                            None,
+                            Some(Time::from_secs_f64(0.4)),
+                            None,
+                            None,
+                            None,
+                        );
+                    }
+                    corrections.push("dead air: added 0.4 s fade-out tails to reel clips".to_string());
+                    changed = true;
+                }
+                _ => {}
+            }
+        }
+        if !changed {
+            break;
+        }
+        store.save(&mut project)?;
+        current_output = revisions_root.join(format!(
+            "{}-autoedit-r{}.mp4",
+            crate::util::text::slugify(&project.name),
+            project.revision
+        ));
+    }
+
+    // Subject-aware reframe of the finished reel (item: reframe integrated into auto-edit).
+    // Runs after QA passes so corrections operate on the un-reframed timeline.
+    let mut reframe_outcome: Option<crate::reframe::ReframeReport> = None;
+    if reframe {
+        let reframed = revisions_root.join(format!(
+            "{}-autoedit-r{}-reframed.mp4",
+            crate::util::text::slugify(&project.name),
+            project.revision
+        ));
+        let work_dir = std::env::temp_dir().join("cinvar-reframe");
+        eprintln!("reframe pass: {} -> {}", current_output.display(), reframed.display());
+        let rr = crate::reframe::reframe(&current_output, &reframed, "vertical", &work_dir, 4.0)?;
+        current_output = reframed;
+        reframe_outcome = Some(rr);
+    }
+
+    let payload = json!({
+        "project": store.root.display().to_string(),
+        "plan": plan.to_json(),
+        "clips": clip_ids,
+        "output": current_output.display().to_string(),
+        "render_passes": render_passes,
+        "corrections": corrections,
+        "captions": captions_outcome.as_ref().map(|c| json!({"cues": c.cues, "engine": c.engine, "files_transcribed": c.files_transcribed})),
+        "reframe": reframe_outcome.as_ref().map(|r| json!({
+            "output": r.output, "crop": [r.crop_w, r.crop_h], "out": [r.out_w, r.out_h],
+            "seconds": r.seconds, "frames_sampled": r.track.frames_sampled,
+            "frames_with_person": r.track.frames_with_person, "device": r.track.device,
+        })),
+        "qa": report,
+    });
+    out(json_mode, payload.clone(), || {
+        let verdict = if report.passed { "passed" } else { "FAILED" };
+        let mut text = format!(
+            "autoedit: {} selected clip(s), {:.1}s reel\nrendered: {} (QA {})\n",
+            plan.selections.len(),
+            plan.timeline_secs,
+            current_output.display(),
+            verdict
+        );
+        for sel in &plan.selections {
+            text.push_str(&format!(
+                "  {:.1}-{:.1}s score {:.2} from {} ({})\n",
+                sel.start, sel.end, sel.score, sel.file_name, sel.reason
+            ));
+        }
+        if !corrections.is_empty() {
+            text.push_str("corrections:\n");
+            for c in &corrections {
+                text.push_str(&format!("  - {c}\n"));
+            }
+        }
+        text
+    });
+    if !report.passed {
+        return Err(Error::new(
+            ErrorCode::Render,
+            format!("autoedit finished but QA did not pass after {max_revisions} revision(s); see the qa section in the report"),
+        ));
+    }
+    Ok(())
+}
+
 fn cmd_run(
     request: &str,
     model: Option<&str>,
@@ -1323,6 +2316,7 @@ fn cmd_render(
     range: Option<String>,
     wait: bool,
     json_mode: bool,
+    pro_preview: bool,
 ) -> Result<()> {
     let store = resolve_project(explicit)?;
     let project = store.load()?;
@@ -1342,12 +2336,29 @@ fn cmd_render(
             ))
         }
     };
+    // Fail fast: an explicit size or codec this edition cannot reach is refused here, with
+    // PermissionDenied (exit code 3), instead of surfacing from the background job as a render
+    // failure. render::plan_render re-checks, so this is an accelerator, not the gate.
+    if !preview {
+        let entitlements = crate::edition::resolve_from_disk();
+        if let (Some(w), Some(h)) = (width, height) {
+            entitlements.gate_export(w, h, pro_preview)?;
+        }
+        if codec
+            .as_deref()
+            .and_then(crate::render::pro_codec_name)
+            .is_some()
+        {
+            entitlements.gate_feature(crate::edition::Feature::ProCodecs, pro_preview)?;
+        }
+    }
     let mut request = crate::render::RenderRequest::for_output(output_path.clone());
     request.preview = preview;
     request.width = width;
     request.height = height;
     request.crf = crf;
     request.codec = codec;
+    request.pro_preview = pro_preview;
     if let Some(raw) = range {
         request.range = Some(parse_range(&raw)?);
     }
@@ -1487,6 +2498,178 @@ fn cmd_jobs(cmd: &JobsCmd, json_mode: bool) -> Result<()> {
         }
         JobsCmd::Cancel { job_id } => Err(Error::not_found(format!("job {job_id} is not running in this process"))
             .with_hint("cancel a render through the MCP cinvar.render.cancel tool, or Ctrl-C a blocking render")),
+    }
+}
+
+fn cmd_reframe(
+    input: &Path,
+    output: Option<&Path>,
+    target: &str,
+    sample_fps: f64,
+    json_mode: bool,
+) -> Result<()> {
+    let output = output
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| input.with_extension("reframed.mp4"));
+    let work_dir = std::env::temp_dir().join("cinvar-reframe");
+    let report = crate::reframe::reframe(input, &output, target, &work_dir, sample_fps)?;
+    if json_mode {
+        println!(
+            "{}",
+            serde_json::json!({
+                "input": input,
+                "output": report.output,
+                "target": target,
+                "input_size": [report.track.width, report.track.height],
+                "output_size": [report.out_w, report.out_h],
+                "crop_window": [report.crop_w, report.crop_h],
+                "frames_sampled": report.track.frames_sampled,
+                "frames_with_person": report.track.frames_with_person,
+                "keyframes": report.track.keyframes.len(),
+                "device": report.track.device,
+                "wall_seconds": report.seconds,
+            })
+        );
+    } else {
+        println!(
+            "reframed {} -> {} ({}x{} window -> {}x{}; subject in {}/{} sampled frames on {})",
+            input.display(),
+            report.output,
+            report.crop_w,
+            report.crop_h,
+            report.out_w,
+            report.out_h,
+            report.track.frames_with_person,
+            report.track.frames_sampled,
+            report.track.device,
+        );
+    }
+    Ok(())
+}
+
+fn cmd_enhance(
+    input: &Path,
+    upscale: u32,
+    output: Option<&Path>,
+    tile: Option<u32>,
+    json_mode: bool,
+    pro_preview: bool,
+) -> Result<()> {
+    if !input.is_file() {
+        return Err(Error::invalid(format!("input not found: {}", input.display())));
+    }
+    let output = output
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| input.with_extension(format!("upscaled{upscale}x.mp4")));
+    let work_dir = std::env::temp_dir().join("cinvar-enhance");
+    let started = std::time::Instant::now();
+    let report = crate::enhance::enhance_video_with(
+        input,
+        &output,
+        upscale,
+        tile.unwrap_or(0),
+        &work_dir,
+        pro_preview,
+    )?;
+    let (duration, _fps, width, height, _audio) = crate::enhance::probe_video(input)?;
+    if json_mode {
+        println!(
+            "{}",
+            serde_json::json!({
+                "input": input,
+                "output": output,
+                "scale": upscale,
+                "input_size": [width, height],
+                "output_size": [width * upscale, height * upscale],
+                "frames": report.count,
+                "gpu_seconds": report.seconds,
+                "wall_seconds": started.elapsed().as_secs_f64(),
+                "input_duration": duration,
+            })
+        );
+    } else {
+        println!(
+            "upscaled {}x: {} -> {}\n  {}x{} -> {}x{}, {} frames, {} s on GPU {} (wall {:.1} s)",
+            upscale,
+            input.display(),
+            output.display(),
+            width,
+            height,
+            width * upscale,
+            height * upscale,
+            report.count,
+            report.seconds,
+            report.gpuid,
+            started.elapsed().as_secs_f64()
+        );
+    }
+    Ok(())
+}
+
+#[derive(clap::Subcommand, Debug)]
+pub enum AudioCmd {
+    #[command(about = "Separate stems and render a cleaned mix (vocals + ducked background)")]
+    Clean {
+        #[arg(value_name = "INPUT")]
+        input: PathBuf,
+        #[arg(value_name = "FILE", help = "Output file (default: <input>.clean.wav)")]
+        output: Option<PathBuf>,
+        #[arg(long, default_value = "htdemucs")]
+        model: String,
+    },
+    #[command(about = "Separate into 4 stems without mixing")]
+    Stems {
+        #[arg(value_name = "INPUT")]
+        input: PathBuf,
+        #[arg(long, default_value = "htdemucs")]
+        model: String,
+    },
+}
+
+fn cmd_audio(cmd: &AudioCmd, json_mode: bool) -> Result<()> {
+    match cmd {
+        AudioCmd::Clean { input, output, model } => {
+            if !input.is_file() {
+                return Err(Error::invalid(format!("input not found: {}", input.display())));
+            }
+            let out = output
+                .clone()
+                .unwrap_or_else(|| input.with_extension("clean.wav"));
+            let work_dir = std::env::temp_dir().join("cinvar-demucs");
+            let started = std::time::Instant::now();
+            let report = crate::audio::demucs::clean_mix(input, &out, &work_dir)?;
+            if json_mode {
+                println!("{}", serde_json::json!({
+                    "input": input, "output": out, "stems": report.stems,
+                    "gpu_seconds": report.seconds,
+                    "wall_seconds": started.elapsed().as_secs_f64(),
+                }));
+            } else {
+                println!(
+                    "cleaned mix: {} ({} stems, {} s separation, wall {:.1} s)",
+                    out.display(),
+                    report.stems.len(),
+                    report.seconds,
+                    started.elapsed().as_secs_f64()
+                );
+            }
+            Ok(())
+        }
+        AudioCmd::Stems { input, model } => {
+            if !input.is_file() {
+                return Err(Error::invalid(format!("input not found: {}", input.display())));
+            }
+            let work_dir = std::env::temp_dir().join("cinvar-demucs");
+            let report = crate::audio::demucs::separate(input, &work_dir, model)?;
+            if json_mode {
+                println!("{}", serde_json::json!({ "input": input, "stems": report.stems }));
+            } else {
+                for s in &report.stems {
+                    println!("{}", s);
+                }
+            }
+            Ok(())
+        }
     }
 }
 
@@ -1660,4 +2843,240 @@ fn cmd_bench() -> Result<()> {
     });
     println!("{}", serde_json::to_string_pretty(&payload)?);
     Ok(())
+}
+
+fn cmd_shorts(
+    input: &Path,
+    count: u32,
+    duration: &str,
+    output: Option<&Path>,
+    vocab: Option<&str>,
+    report: Option<&Path>,
+    json_mode: bool,
+) -> Result<()> {
+    let (min_duration, max_duration) = crate::shorts::parse_duration_range(duration)?;
+    if count == 0 {
+        return Err(Error::invalid("--count must be at least 1"));
+    }
+    if !crate::shorts::source_usable(input) {
+        return Err(Error::invalid(format!("input not found or empty: {}", input.display())));
+    }
+    crate::edition::resolve_from_disk().check_feature(crate::edition::Feature::ShortsMulti)?;
+    let req = crate::shorts::ShortsRequest {
+        input: input.to_path_buf(),
+        count,
+        min_duration,
+        max_duration,
+        output_dir: output.map(|p| p.to_path_buf()),
+        vocab: vocab
+            .map(|v| {
+                v.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default(),
+    };
+    let result = crate::shorts::generate(&req)?;
+    if let Some(path) = report {
+        let body = serde_json::to_vec_pretty(&result)?;
+        std::fs::write(path, body)?;
+    }
+    out(json_mode, serde_json::to_value(&result).unwrap_or_default(), || {
+        let mut text = format!(
+            "shorts: {} from {} ({} ms)\n\n",
+            result.shorts.len(),
+            result.source.display(),
+            result.elapsed_ms
+        );
+        for s in &result.shorts {
+            let name = s
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            text.push_str(&format!(
+                "  {}  {:>6.2}s-{:<6.2}s  {:>5.1} score  {}x{}  QA {}\n",
+                name,
+                s.start,
+                s.end,
+                s.score,
+                s.width,
+                s.height,
+                if s.qa_passed { "passed" } else { "FAILED" }
+            ));
+        }
+        text
+    })
+}
+
+fn cmd_activate(
+    key: Option<&str>,
+    file: Option<&Path>,
+    redeem_url: Option<&str>,
+    json_mode: bool,
+) -> Result<()> {
+    let source = match (key, file) {
+        (_, Some(path)) => crate::edition::ActivationSource::File(path.to_path_buf()),
+        (Some(raw), None) => {
+            let candidate = Path::new(raw);
+            if candidate.is_file() {
+                crate::edition::ActivationSource::File(candidate.to_path_buf())
+            } else {
+                crate::edition::ActivationSource::OrderKey(raw.to_string())
+            }
+        }
+        (None, None) => return Err(Error::invalid("pass an order key or --file <license.json>")),
+    };
+    let license = crate::edition::activate_with(source, redeem_url)?;
+    out(json_mode, serde_json::to_value(&license).unwrap_or_default(), || {
+        format!(
+            "CINVAR Pro activated (license {}, edition {}).\nPro capabilities are unlocked now; no restart needed.",
+            license.id, license.edition
+        )
+    })
+}
+#[derive(Subcommand, Debug)]
+enum BlenderCmd {
+    #[command(about = "Render a Blender animation: single machine, or across ssh workers with --workers")]
+    Render {
+        #[arg(long, value_name = "ssh://n1,ssh://n4", help = "Worker machines; omit to render on this machine")]
+        workers: Option<String>,
+        #[arg(long, default_value = "logo_reveal")]
+        template: String,
+        #[arg(long)]
+        text: Option<String>,
+        #[arg(long, default_value_t = 5.0)]
+        duration: f64,
+        #[arg(long, default_value_t = 1920)]
+        width: u32,
+        #[arg(long, default_value_t = 1080)]
+        height: u32,
+        #[arg(long, default_value_t = 30)]
+        fps: u32,
+        #[arg(long, help = "Keep the alpha channel (ProRes 4444)")]
+        transparent: bool,
+        #[arg(long, value_name = "DIR", help = "Render job directory (default: the project folder)")]
+        out_dir: Option<PathBuf>,
+        #[arg(long, default_value_t = 32, help = "Cycles samples per pixel")]
+        samples: u32,
+        #[arg(long, help = "Extra attempts for a unit that produced nothing usable")]
+        retries: Option<u32>,
+    },
+    #[command(about = "Report the render devices Blender offers on this machine and which one is chosen")]
+    Devices,
+}
+
+fn cmd_blender(cmd: &BlenderCmd, json_mode: bool) -> Result<()> {
+    match cmd {
+        BlenderCmd::Devices => {
+            let (info, probe, choice) = crate::blender::gpu::detect()?;
+            out(
+                json_mode,
+                serde_json::to_value(&serde_json::json!({
+                    "blender": info.version,
+                    "probe": probe,
+                    "choice": choice,
+                }))
+                .unwrap_or_default(),
+                || {
+                    let mut text = format!("Blender {}\n\n", info.version);
+                    for d in &probe.devices {
+                        text.push_str(&format!("  {:<8} {}\n", d.backend.as_str(), d.name));
+                    }
+                    text.push_str(&format!("\n{}\n", choice.diagnosis()));
+                    text
+                },
+            )
+        }
+        BlenderCmd::Render {
+            workers,
+            template,
+            text,
+            duration,
+            width,
+            height,
+            fps,
+            transparent,
+            out_dir,
+            samples,
+            retries,
+        } => {
+            let mut anim = crate::blender::AnimationSpec::default();
+            anim.template = template.clone();
+            if let Some(value) = text {
+                anim.text = value.clone();
+            }
+            anim.duration = crate::util::time::Time::from_secs_f64(*duration);
+            anim.width = *width;
+            anim.height = *height;
+            anim.fps = *fps;
+            anim.transparent = *transparent;
+            let ent = crate::edition::resolve_from_disk();
+            ent.check_export(anim.width, anim.height)?;
+            let base = match out_dir {
+                Some(dir) => dir.clone(),
+                None => std::env::current_dir().map_err(|e| {
+                    crate::error::Error::new(
+                        crate::error::ErrorCode::Io,
+                        format!("current directory: {e}"),
+                    )
+                })?,
+            };
+            let started = std::time::Instant::now();
+            match workers {
+                Some(list) => {
+                    let mut opts = crate::blender::distributed::DistributedOptions::default();
+                    opts.workers = crate::blender::distributed::parse_workers(list)?;
+                    opts.profile.samples = *samples;
+                    if let Some(r) = retries {
+                        opts.retries = *r;
+                    }
+                    let report = crate::blender::distributed::render(
+                        &anim,
+                        &base,
+                        &opts,
+                        &crate::blender::RenderControl::none(),
+                    )?;
+                    let elapsed = started.elapsed().as_secs_f64();
+                    out(
+                        json_mode,
+                        serde_json::to_value(&report).unwrap_or_default(),
+                        || {
+                            format!(
+                                "rendered {} frame(s) across {} worker(s) in {:.1}s -> {}\nreused {} frame(s), {} of {} unit(s) completed",
+                                report.rendered_frames,
+                                report.per_worker.len(),
+                                elapsed,
+                                report.clip.display(),
+                                report.reused_frames,
+                                report.units_completed,
+                                report.units_planned
+                            )
+                        },
+                    )
+                }
+                None => {
+                    let render = crate::blender::render_animation_job(
+                        &anim,
+                        &base,
+                        &crate::blender::RenderControl::none(),
+                    )?;
+                    let elapsed = started.elapsed().as_secs_f64();
+                    out(
+                        json_mode,
+                        serde_json::to_value(&render).unwrap_or_default(),
+                        || {
+                            format!(
+                                "rendered {} frame(s) in {:.1}s -> {}",
+                                render.frames,
+                                elapsed,
+                                render.clip.display()
+                            )
+                        },
+                    )
+                }
+            }
+        }
+    }
 }

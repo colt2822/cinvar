@@ -23,6 +23,7 @@ fn real_blender_renders_a_clip() {
         height: 180,
         fps: 24,
         color: "#4f8cff".into(),
+        transparent: false,
     };
     let clip = blender::render_animation(&spec, dir.path()).expect("real render");
     assert!(clip.metadata().unwrap().len() > 0);
@@ -158,6 +159,7 @@ fn real_blender_interrupt_and_resume() {
         height: 270,
         fps: 24,
         color: "#ff8c4f".into(),
+        transparent: false,
     };
     let seen = Cell::new(0usize);
     let progress = |done: usize, _t: usize| seen.set(done);
@@ -201,6 +203,7 @@ fn real_blender_renders_native_8k() {
         height: 4320,
         fps: 24,
         color: "#4f8cff".into(),
+        transparent: false,
     };
     let started = std::time::Instant::now();
     let clip = blender::render_animation(&spec, dir.path()).expect("native 8K render");
@@ -239,4 +242,144 @@ fn real_blender_renders_native_8k() {
         "{}",
         String::from_utf8_lossy(&decode.stderr)
     );
+}
+
+/// Minimal stdio JSON-RPC client for the tests in this file.
+struct McpStdio {
+    child: std::process::Child,
+    stdin: std::process::ChildStdin,
+    out: std::sync::mpsc::Receiver<String>,
+    id: u64,
+}
+
+impl McpStdio {
+    fn start(project: &std::path::Path, config: &std::path::Path) -> McpStdio {
+        use std::io::BufRead;
+        use std::process::{Command, Stdio};
+        let mut child = Command::new(env!("CARGO_BIN_EXE_cinvar"))
+            .args(["mcp", "serve", "--project"])
+            .arg(project)
+            .env("CINVAR_CONFIG_DIR", config)
+            .env("CINVAR_MCP_PERMISSIONS", "full")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn cinvar mcp serve");
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let (tx, out) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for line in std::io::BufReader::new(stdout)
+                .lines()
+                .map_while(|l| l.ok())
+            {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        McpStdio {
+            child,
+            stdin,
+            out,
+            id: 0,
+        }
+    }
+
+    fn call(&mut self, name: &str, args: serde_json::Value) -> serde_json::Value {
+        use std::io::Write;
+        self.id += 1;
+        let req = serde_json::json!({"jsonrpc": "2.0", "id": self.id, "method": "tools/call",
+            "params": {"name": name, "arguments": args}});
+        writeln!(self.stdin, "{req}").unwrap();
+        self.stdin.flush().unwrap();
+        loop {
+            let line = self
+                .out
+                .recv_timeout(std::time::Duration::from_secs(600))
+                .expect("mcp reply");
+            let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+            if v["id"] == self.id {
+                return v;
+            }
+        }
+    }
+}
+
+impl Drop for McpStdio {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// A rendered Blender clip must be usable by a LATER tool call. \`cinvar.blender.animation\` used to
+/// import the clip into memory and return its asset id without persisting the project, so the
+/// next call loaded project.json and answered "asset ... is not in this project".
+#[test]
+#[ignore = "requires a real Blender install (set CINVAR_BLENDER)"]
+fn a_rendered_clip_survives_into_a_later_tool_call() {
+    let _shared = HEAVY.read().unwrap();
+    blender::available().expect("Blender not found: set CINVAR_BLENDER");
+    let dir = tempfile::tempdir().unwrap();
+    let bin = env!("CARGO_BIN_EXE_cinvar");
+    let cfg = dir.path().join("cfg");
+    std::fs::create_dir_all(&cfg).unwrap();
+    let project_dir = dir.path().join("proj");
+    let created = std::process::Command::new(bin)
+        .args(["project", "create", "--name", "blendpersist", "--dir"])
+        .arg(dir.path())
+        .env("CINVAR_CONFIG_DIR", &cfg)
+        .output()
+        .unwrap();
+    assert!(
+        created.status.success(),
+        "project create failed: {}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let project_dir = if project_dir.is_dir() {
+        project_dir
+    } else {
+        std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .find(|p| p.join("project.json").is_file())
+            .expect("created project directory")
+    };
+
+    let mut server = McpStdio::start(&project_dir, &cfg);
+    let timeline = server.call(
+        "cinvar.timeline.create",
+        serde_json::json!({"name": "Main", "width": 160, "height": 90, "fps": 16}),
+    );
+    assert_eq!(timeline["result"]["isError"], false, "{timeline}");
+    let anim = server.call(
+        "cinvar.blender.animation",
+        serde_json::json!({
+            "template": "title_3d", "text": "OK", "duration": 0.5,
+            "width": 160, "height": 90, "fps": 16
+        }),
+    );
+    assert_eq!(anim["result"]["isError"], false, "{anim}");
+    let asset_id = anim["result"]["structuredContent"]["asset_id"]
+        .as_str()
+        .or_else(|| {
+            anim["result"]["content"][0]["text"]
+                .as_str()
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok())
+                .and_then(|v| v["asset_id"].as_str().map(|s| s.to_string()))
+                .map(|s| s.leak() as &str)
+        })
+        .expect("asset_id in the tool reply")
+        .to_string();
+
+    // A second call: the server reloads the project from disk, so this only works if the asset
+    // was persisted.
+    let placed = server.call(
+        "cinvar.timeline.insert_clip",
+        serde_json::json!({"asset_id": asset_id, "at": 0}),
+    );
+    assert_eq!(placed["result"]["isError"], false, "{placed}");
 }

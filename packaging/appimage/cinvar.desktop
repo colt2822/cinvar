@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=CINVAR
+GenericName=AI video editor
+Comment=Create and edit video with AI agents
+Exec=cinvar
+Icon=cinvar
+Terminal=true
+Categories=AudioVideo;Video;
+Keywords=video;editor;ai;ffmpeg;

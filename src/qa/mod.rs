@@ -7,6 +7,7 @@ use crate::project::model::{Project, Timeline, TrackKind};
 use crate::project::store::ProjectStore;
 use crate::util::time::Time;
 
+pub(crate) mod composite;
 pub(crate) mod probe;
 
 const SKIP_PREFIX: &str = "skipped: ";
@@ -16,6 +17,9 @@ const BLACK_MAX_SPANS: usize = 3;
 const BLACK_MAX_SPAN_SECS: f64 = 1.0;
 const AUDIO_SILENT_MEAN_DB: f64 = -50.0;
 const AUDIO_CLIP_MAX_DB: f64 = 0.0;
+const FREEZE_MAX_SECS: f64 = 2.0;
+const DEAD_AIR_MIN_SECS: f64 = 2.5;
+const DEAD_AIR_DB: f64 = -45.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QaCheck {
@@ -150,6 +154,9 @@ pub fn validate_render(project: &Project, store: &ProjectStore, output: &Path) -
                 "audio_present",
                 "black_frames",
                 "audio_levels",
+                "frozen_frames",
+                "dead_air",
+                "composite_visibility",
             ] {
                 results.push(measured(name, false, reason.clone()));
             }
@@ -322,6 +329,97 @@ pub fn validate_render(project: &Project, store: &ProjectStore, output: &Path) -
                 )),
             }
         }
+        // A frozen picture (static frame) for longer than FREEZE_MAX_SECS means a
+        // stuck source, a freeze-frame effect nobody asked for, or a stalled render.
+        if !info.has_video {
+            results.push(skipped(
+                "frozen_frames",
+                "the file carries no video stream to measure",
+            ));
+        } else {
+            match probe::freeze_spans(&path, FREEZE_MAX_SECS, 0.003) {
+                Ok(spans) => {
+                    let longest = spans
+                        .iter()
+                        .map(|s| s.duration())
+                        .fold(0.0f64, |a, b| if b > a { b } else { a });
+                    let detail = if spans.is_empty() {
+                        format!("measured 0 frozen spans ≥{FREEZE_MAX_SECS:.1} s")
+                    } else {
+                        let stamps: Vec<String> = spans
+                            .iter()
+                            .take(5)
+                            .map(|s| format!("{:.2}-{:.2}s", s.start, s.end))
+                            .collect();
+                        format!(
+                            "{} frozen span(s), longest {longest:.2} s at {} (limit: any span over {FREEZE_MAX_SECS:.1} s)",
+                            spans.len(),
+                            stamps.join(", ")
+                        )
+                    };
+                    results.push(measured("frozen_frames", spans.is_empty(), detail));
+                }
+                Err(err) => results.push(measured(
+                    "frozen_frames",
+                    false,
+                    fail_unmeasurable(&crate::secrets::redact(&err.message)),
+                )),
+            }
+        }
+
+        // Composite visibility: an upper-track clip must neither hide the footage under it nor vanish.
+        match timeline.and_then(|tl| {
+            composite::check(project, store, tl, &path, timeline_canvas(project, timeline))
+        }) {
+            Some(v) => results.push(measured("composite_visibility", v.passed, v.detail)),
+            None => results.push(skipped(
+                "composite_visibility",
+                "no overlay clip sits over another video clip, so there is nothing to composite-check",
+            )),
+        }
+
+        // Dead air: long stretches of near-silence inside the programme (not at the
+        // head or tail, which fades may legitimately occupy).
+        if !info.has_audio {
+            results.push(skipped(
+                "dead_air",
+                "the file carries no audio stream to measure",
+            ));
+        } else {
+            match crate::media::detect_silence(&path, DEAD_AIR_DB, DEAD_AIR_MIN_SECS) {
+                Ok(spans) => {
+                    let total = info.duration.as_secs_f64();
+                    let dead: Vec<&crate::media::Span> = spans
+                        .iter()
+                        .filter(|s| {
+                            s.start.as_secs_f64() > 1.0 && s.end.as_secs_f64() < total - 1.0
+                        })
+                        .collect();
+                    let detail = if dead.is_empty() {
+                        format!(
+                            "measured 0 dead-air spans ≥{DEAD_AIR_MIN_SECS:.1} s at {DEAD_AIR_DB:.0} dB inside the programme"
+                        )
+                    } else {
+                        let stamps: Vec<String> = dead
+                            .iter()
+                            .take(5)
+                            .map(|s| format!("{:.2}-{:.2}s", s.start.as_secs_f64(), s.end.as_secs_f64()))
+                            .collect();
+                        format!(
+                            "{} dead-air span(s) at {} (limit: any programme span over {DEAD_AIR_MIN_SECS:.1} s at {DEAD_AIR_DB:.0} dB)",
+                            dead.len(),
+                            stamps.join(", ")
+                        )
+                    };
+                    results.push(measured("dead_air", dead.is_empty(), detail));
+                }
+                Err(err) => results.push(measured(
+                    "dead_air",
+                    false,
+                    fail_unmeasurable(&crate::secrets::redact(&err.message)),
+                )),
+            }
+        }
     }
 
     let scored: Vec<&QaCheck> = results
@@ -346,7 +444,7 @@ pub fn validate_render(project: &Project, store: &ProjectStore, output: &Path) -
 pub fn validate_project(project: &Project, store: &ProjectStore) -> QaReport {
     let _ = store;
     let issues = crate::project::ops::validate(project);
-    let checks = vec![QaCheck {
+    let mut checks = vec![QaCheck {
         name: "project_integrity".into(),
         passed: issues.is_empty(),
         detail: if issues.is_empty() {
@@ -355,6 +453,49 @@ pub fn validate_project(project: &Project, store: &ProjectStore) -> QaReport {
             issues.join("; ")
         },
     }];
+
+    // Caption readability: deterministic check against the active style limits.
+    if project.captions.is_empty() {
+        checks.push(QaCheck {
+            name: "caption_overflow".into(),
+            passed: true,
+            detail: "skipped: no caption track in this project".into(),
+        });
+    } else {
+        let track = &project.captions[0];
+        let limit = track.style.max_chars_per_line as usize;
+        let offenders: Vec<String> = track
+            .cues
+            .iter()
+            .filter(|c| c.text.lines().any(|l| l.chars().count() > limit * 3))
+            .map(|c| {
+                format!(
+                    "{:.1}-{:.1}s \"{}\"",
+                    c.start.as_secs_f64(),
+                    c.end.as_secs_f64(),
+                    crate::util::text::truncate(&c.text, 40)
+                )
+            })
+            .collect();
+        checks.push(QaCheck {
+            name: "caption_overflow".into(),
+            passed: offenders.is_empty(),
+            detail: if offenders.is_empty() {
+                format!(
+                    "measured {} cue(s), all within the {} chars-per-line read limit",
+                    track.cues.len(),
+                    limit * 3
+                )
+            } else {
+                format!(
+                    "{} cue(s) exceed 3x the {} chars-per-line read limit: {}",
+                    offenders.len(),
+                    limit,
+                    offenders.join("; ")
+                )
+            },
+        });
+    }
     let passed = checks.iter().all(|c| c.passed);
     QaReport {
         passed,

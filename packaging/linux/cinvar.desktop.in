@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=CINVAR
+GenericName=AI video editor
+Comment=Create and edit video with AI agents
+# The Exec line is rendered by install-desktop.sh with an absolute launcher command.
+Exec=@@EXEC@@
+Icon=cinvar
+Terminal=false
+Categories=AudioVideo;Video;
+Keywords=video;editor;ai;ffmpeg;captions;
+StartupNotify=true
+StartupWMClass=cinvar

@@ -1,0 +1,162 @@
+{
+  "measured_numbers": true,
+  "headline": {
+    "x264_config": "libx264_medium_crf23",
+    "nvenc_config": "h264_nvenc_p4_cq28",
+    "note": "Speed is encode-only wall time of ffmpeg on raw input at 1080p. Quality is PSNR/SSIM vs. source; the two headline configs are NOT quality-matched (compare the cq23 nvenc row against crf23 x264 for a closer match)."
+  },
+  "x264_fps_1080p": 18.98,
+  "nvenc_fps_1080p": 245.46,
+  "speedup_nvenc_over_x264_medium": 12.93,
+  "results": [
+    {
+      "name": "libx264_medium_crf23",
+      "encoder": "libx264",
+      "args": "-preset medium -crf 23",
+      "command": "ffmpeg -y -hide_banner -loglevel error -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 30 -i /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/src_1920x1080_30fps_300f.yuv -frames:v 300 -c:v libx264 -preset medium -crf 23 -pix_fmt yuv420p /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/libx264_medium_crf23.mp4",
+      "frames": 300,
+      "runs_sec": [
+        17.652,
+        14.641,
+        15.802
+      ],
+      "median_sec": 15.802,
+      "fps_median": 18.98,
+      "fps_min": 16.99,
+      "fps_max": 20.49,
+      "output_bytes": 122540355,
+      "bitrate_kbps": 98032.3,
+      "psnr_avg_db": 33.922163,
+      "ssim_all": 0.935791
+    },
+    {
+      "name": "libx264_veryfast_crf23",
+      "encoder": "libx264",
+      "args": "-preset veryfast -crf 23",
+      "command": "ffmpeg -y -hide_banner -loglevel error -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 30 -i /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/src_1920x1080_30fps_300f.yuv -frames:v 300 -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/libx264_veryfast_crf23.mp4",
+      "frames": 300,
+      "runs_sec": [
+        4.418,
+        4.53,
+        4.832
+      ],
+      "median_sec": 4.53,
+      "fps_median": 66.23,
+      "fps_min": 62.08,
+      "fps_max": 67.9,
+      "output_bytes": 106384174,
+      "bitrate_kbps": 85107.3,
+      "psnr_avg_db": 32.996588,
+      "ssim_all": 0.91271
+    },
+    {
+      "name": "h264_nvenc_p4_cq28",
+      "encoder": "h264_nvenc",
+      "args": "-preset p4 -rc vbr -cq 28 -b:v 0 -gpu 0",
+      "command": "ffmpeg -y -hide_banner -loglevel error -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 30 -i /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/src_1920x1080_30fps_300f.yuv -frames:v 300 -c:v h264_nvenc -preset p4 -rc vbr -cq 28 -b:v 0 -gpu 0 -pix_fmt yuv420p /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/h264_nvenc_p4_cq28.mp4",
+      "frames": 300,
+      "runs_sec": [
+        1.249,
+        1.222,
+        1.222
+      ],
+      "median_sec": 1.222,
+      "fps_median": 245.46,
+      "fps_min": 240.2,
+      "fps_max": 245.47,
+      "output_bytes": 13803937,
+      "bitrate_kbps": 11043.1,
+      "psnr_avg_db": 27.619973,
+      "ssim_all": 0.569928
+    },
+    {
+      "name": "h264_nvenc_p4_cq23",
+      "encoder": "h264_nvenc",
+      "args": "-preset p4 -rc vbr -cq 23 -b:v 0 -gpu 0",
+      "command": "ffmpeg -y -hide_banner -loglevel error -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 30 -i /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/src_1920x1080_30fps_300f.yuv -frames:v 300 -c:v h264_nvenc -preset p4 -rc vbr -cq 23 -b:v 0 -gpu 0 -pix_fmt yuv420p /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/h264_nvenc_p4_cq23.mp4",
+      "frames": 300,
+      "runs_sec": [
+        1.218,
+        1.22,
+        1.222
+      ],
+      "median_sec": 1.22,
+      "fps_median": 245.98,
+      "fps_min": 245.49,
+      "fps_max": 246.28,
+      "output_bytes": 21644893,
+      "bitrate_kbps": 17315.9,
+      "psnr_avg_db": 27.85419,
+      "ssim_all": 0.600034
+    },
+    {
+      "name": "h264_nvenc_p4_cq18",
+      "encoder": "h264_nvenc",
+      "args": "-preset p4 -rc vbr -cq 18 -b:v 0 -gpu 0",
+      "command": "ffmpeg -y -hide_banner -loglevel error -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 30 -i /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/src_1920x1080_30fps_300f.yuv -frames:v 300 -c:v h264_nvenc -preset p4 -rc vbr -cq 18 -b:v 0 -gpu 0 -pix_fmt yuv420p /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/h264_nvenc_p4_cq18.mp4",
+      "frames": 300,
+      "runs_sec": [
+        1.228,
+        1.231,
+        1.212
+      ],
+      "median_sec": 1.228,
+      "fps_median": 244.31,
+      "fps_min": 243.79,
+      "fps_max": 247.43,
+      "output_bytes": 21592793,
+      "bitrate_kbps": 17274.2,
+      "psnr_avg_db": 27.84794,
+      "ssim_all": 0.599188
+    },
+    {
+      "name": "h264_nvenc_p4_cq14",
+      "encoder": "h264_nvenc",
+      "args": "-preset p4 -rc vbr -cq 14 -b:v 0 -gpu 0",
+      "command": "ffmpeg -y -hide_banner -loglevel error -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 30 -i /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/src_1920x1080_30fps_300f.yuv -frames:v 300 -c:v h264_nvenc -preset p4 -rc vbr -cq 14 -b:v 0 -gpu 0 -pix_fmt yuv420p /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/h264_nvenc_p4_cq14.mp4",
+      "frames": 300,
+      "runs_sec": [
+        1.218,
+        1.216,
+        1.229
+      ],
+      "median_sec": 1.218,
+      "fps_median": 246.29,
+      "fps_min": 244.03,
+      "fps_max": 246.65,
+      "output_bytes": 21688927,
+      "bitrate_kbps": 17351.1,
+      "psnr_avg_db": 27.847263,
+      "ssim_all": 0.599355
+    },
+    {
+      "name": "libx264_medium_crf18",
+      "encoder": "libx264",
+      "args": "-preset medium -crf 18",
+      "command": "ffmpeg -y -hide_banner -loglevel error -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 30 -i /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/src_1920x1080_30fps_300f.yuv -frames:v 300 -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p /home/colton-mcclain/.hermes/profiles/agent-office/cache/scratch/cinvar-bench/libx264_medium_crf18.mp4",
+      "frames": 300,
+      "runs_sec": [
+        17.055,
+        19.503,
+        17.996
+      ],
+      "median_sec": 17.996,
+      "fps_median": 16.67,
+      "fps_min": 15.38,
+      "fps_max": 17.59,
+      "output_bytes": 193958148,
+      "bitrate_kbps": 155166.5,
+      "psnr_avg_db": 39.280788,
+      "ssim_all": 0.981271
+    }
+  ],
+  "environment": {
+    "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+    "gpus": "0, NVIDIA GeForce RTX 3060 Ti, 580.178.04\n1, Tesla P40, 580.178.04",
+    "cpu": "Model name:                              Intel(R) Core(TM) i5-10600K CPU @ 4.10GHz",
+    "cpu_threads": 12,
+    "os": "Linux-7.0.0-42-generic-x86_64-with-glibc2.39",
+    "source": "testsrc2 1920x1080 30fps + seeded geq noise blend, raw yuv420p, 300 frames",
+    "source_gen_sec": 4.43
+  }
+}

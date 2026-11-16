@@ -172,6 +172,31 @@ fn stream_fps(stream: &serde_json::Value) -> Option<Fps> {
     None
 }
 
+/// True for pixel formats that carry an alpha plane, plus VP9-style `alpha_mode` side-band alpha.
+pub(crate) fn pix_fmt_has_alpha(pix_fmt: &str) -> bool {
+    let p = pix_fmt.to_ascii_lowercase();
+    p.starts_with("yuva")
+        || p.starts_with("gbrap")
+        || p.starts_with("ya")
+        || p.starts_with("ayuv")
+        || p.starts_with("rgba")
+        || p.starts_with("bgra")
+        || p.starts_with("argb")
+        || p.starts_with("abgr")
+        || p.starts_with("pal8")
+}
+
+fn stream_has_alpha(stream: &serde_json::Value) -> bool {
+    if json_str(stream, "pix_fmt").map(pix_fmt_has_alpha).unwrap_or(false) {
+        return true;
+    }
+    stream
+        .get("tags")
+        .and_then(|t| json_str(t, "alpha_mode"))
+        .map(|v| v.trim() == "1")
+        .unwrap_or(false)
+}
+
 fn stream_rotation(stream: &serde_json::Value) -> i32 {
     if let Some(list) = stream.get("side_data_list").and_then(|v| v.as_array()) {
         for entry in list {
@@ -227,6 +252,7 @@ fn parse_probe(text: &str) -> Result<MediaInfo> {
         info.fps = stream_fps(stream);
         info.rotation = stream_rotation(stream);
         info.nb_frames = json_u64(stream, "nb_frames").filter(|n| *n > 0);
+        info.has_alpha = stream_has_alpha(stream);
     }
     if let Some(stream) = &audio {
         info.audio_codec = json_str(stream, "codec_name").map(|s| s.to_string());
@@ -839,5 +865,28 @@ mod tests {
     fn rejects_garbage_json() {
         assert!(parse_probe("not json").is_err());
         assert!(parse_probe("{\"streams\":[]}").is_err());
+    }
+}
+
+#[cfg(test)]
+mod alpha_detect_tests {
+    use super::*;
+
+    #[test]
+    fn alpha_pixel_formats_are_detected() {
+        for f in ["yuva444p10le", "yuva420p", "rgba", "bgra", "argb", "gbrap", "ya8", "rgba64le"] {
+            assert!(pix_fmt_has_alpha(f), "{f} should carry alpha");
+        }
+        for f in ["yuv420p", "yuv422p10le", "rgb24", "gray", "nv12", "yuv444p12le"] {
+            assert!(!pix_fmt_has_alpha(f), "{f} should not carry alpha");
+        }
+    }
+
+    #[test]
+    fn probe_marks_alpha_streams() {
+        let json = r#"{"streams":[{"codec_type":"video","codec_name":"prores","pix_fmt":"yuva444p10le","width":64,"height":64,"r_frame_rate":"24/1"}],"format":{"format_name":"mov","duration":"1.0"}}"#;
+        assert!(parse_probe(json).unwrap().has_alpha);
+        let json = json.replace("yuva444p10le", "yuv420p");
+        assert!(!parse_probe(&json).unwrap().has_alpha);
     }
 }

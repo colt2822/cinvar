@@ -32,3 +32,17 @@ when a trial encode at the requested size succeeds, otherwise CPU x264/x265. Exp
 (`<project>/jobs/`): duplicates are refused, interrupted jobs are listed and can be retried, jobs can be cancelled.
 After a render, `cinvar qa` / `cinvar.qa.render_check` probes the file (duration, resolution, audio, black frames,
 clipping). Above 1080p see [EIGHT_K.md](EIGHT_K.md).
+
+## Platform notes (fonts, subtitles, ducking)
+
+- **Fonts.** `drawtext` is given an explicit `fontfile=` wherever a font file can be resolved. On Windows a family
+  name such as `font=Arial` is turned into `%WINDIR%\Fonts\arial.ttf` (see `src/render/fonts.rs`); the FFmpeg builds used
+  there ship without a fontconfig configuration and *crash* (exit status `0xC0000005`, after
+  `Fontconfig error: Cannot load default config file`) instead of reporting that they cannot resolve a family. Font paths
+  are quoted for the filtergraph with forward slashes and an escaped drive colon. A family that has no Windows font file
+  mapped to it falls back to the system default font file rather than to fontconfig.
+- **Subtitles.** `.srt`/`.vtt` files are decoded with UTF-16 (either byte order, BOM required) and UTF-8 with a
+  byte-order mark in addition to plain UTF-8/CRLF text, because Windows editors write all three.
+- **Speech ducking.** The compressor's inputs are padded two seconds past the render duration and its output is trimmed
+  back afterwards. FFmpeg 8.0.x ends `sidechaincompress` output early and nondeterministically (up to ~1.2 s of the music
+  bed, measured on 8.0.1 while 6.1 and 8.1 are exact); with the padding the loss lands past the last frame that is kept.

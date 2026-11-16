@@ -85,8 +85,9 @@ jobs:
             target/release/cinvar.exe
           if-no-files-found: ignore
 
-  # Tracks FFmpeg 8.x compatibility (Ubuntu 26.04 ships FFmpeg 8.0). Known open issue: the audio
-  # ducking test fails there. Reported, not gating, until fixed.
+  # Tracks FFmpeg 8.x compatibility (Ubuntu 26.04 ships FFmpeg 8.0). The ducking regression this
+  # job first reported (ffmpeg 8.0.x ending sidechaincompress output early) is handled in
+  # src/render/graph.rs; it stays non-gating because FFmpeg 8 is still only watched, not supported.
   ffmpeg-latest:
     name: test (ubuntu-latest, FFmpeg 8 - experimental)
     runs-on: ubuntu-latest

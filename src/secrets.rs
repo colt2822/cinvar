@@ -62,6 +62,13 @@ impl CredentialStore {
         self.save()
     }
 
+    pub fn remove_key(&mut self, profile: &str) -> Result<()> {
+        if self.keys.remove(profile).is_some() {
+            self.save()?;
+        }
+        Ok(())
+    }
+
     pub fn get_key(&self, profile: &str) -> Option<String> {
         self.keys.get(profile).cloned()
     }
@@ -101,6 +108,34 @@ pub fn resolve(profile_name: &str, profile: &crate::config::ModelProfile) -> Opt
         .and_then(|store| store.get_key(profile_name))
 }
 
+/// Environment variables that may hold a provider key CINVAR itself uses.
+const KEY_ENV_NAMES: &[&str] = &[
+    "CINVAR_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "XAI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "CINVAR_RUNPOD_API_KEY",
+];
+
+/// The built-in names plus every name a configured model profile points at, so a key held under
+/// a custom `api_key_env` is redacted too (a fixed list alone only protects the default names).
+fn key_env_names() -> Vec<String> {
+    let mut names: Vec<String> = KEY_ENV_NAMES.iter().map(|n| n.to_string()).collect();
+    if let Ok(config) = crate::config::Config::load() {
+        for profile in config.models.values() {
+            if let Some(name) = &profile.api_key_env {
+                if !names.contains(name) {
+                    names.push(name.clone());
+                }
+            }
+        }
+    }
+    names
+}
+
 pub fn redact(text: &str) -> String {
     let mut out = text.to_string();
     if let Ok(store) = CredentialStore::load() {
@@ -110,17 +145,8 @@ pub fn redact(text: &str) -> String {
             }
         }
     }
-    for name in [
-        "CINVAR_API_KEY",
-        "OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "GEMINI_API_KEY",
-        "DEEPSEEK_API_KEY",
-        "XAI_API_KEY",
-        "OPENROUTER_API_KEY",
-        "CINVAR_RUNPOD_API_KEY",
-    ] {
-        if let Ok(value) = std::env::var(name) {
+    for name in key_env_names() {
+        if let Ok(value) = std::env::var(&name) {
             if value.len() >= 8 {
                 out = out.replace(&value, "[redacted]");
             }

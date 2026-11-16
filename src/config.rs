@@ -141,6 +141,8 @@ impl Default for RenderDefaults {
 pub struct UiSettings {
     pub port: u16,
     pub open_browser: bool,
+    /// Pick skills (podcast, gaming, short-form, blender...) from what the user asks for.
+    pub auto_skills: bool,
 }
 
 impl Default for UiSettings {
@@ -148,8 +150,69 @@ impl Default for UiSettings {
         UiSettings {
             port: 8420,
             open_browser: false,
+            auto_skills: true,
         }
     }
+}
+
+/// Free/Pro edition behaviour. See `crate::edition`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EditionSettings {
+    /// Can only tighten: `true` enforces Free limits even in a build whose default is observe-only.
+    /// `false` does not turn enforcement off in release builds.
+    pub enforce: bool,
+    /// Endpoint that exchanges an order key for a signed license envelope
+    /// (`cinvar activate <order-key>`). Empty means "use `CINVAR_LICENSE_REDEEM_URL`, then the
+    /// built-in default", which ships empty because no service is deployed yet — see
+    /// `crate::edition::pick_redeem_url` and docs/LICENSE_OPERATIONS.md.
+    pub redeem_url: String,
+}
+
+/// Structured editing-action journal (see `crate::actions`). Local only, off by default.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ActionSettings {
+    pub record: bool,
+}
+
+/// Paid hosted video generation. Off by default; limits are in seconds of video so they hold whatever the price.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct VideoGenSettings {
+    pub enabled: bool,
+    pub max_job_seconds: u32,
+    pub max_day_seconds: u32,
+}
+
+impl Default for VideoGenSettings {
+    fn default() -> Self {
+        VideoGenSettings { enabled: false, max_job_seconds: 8, max_day_seconds: 40 }
+    }
+}
+
+/// A model chosen for one job in the harness: which connection (provider) and which model id.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct RoleBinding {
+    pub provider: String,
+    pub model: String,
+}
+
+/// What each part of the editor uses. `assistant` drives the agent chat, `script` writes scripts/narration
+/// (falls back to the assistant), `video_workflow` is the default generative-video workflow (ComfyUI).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Roles {
+    pub assistant: Option<RoleBinding>,
+    pub script: Option<RoleBinding>,
+    /// Designs Blender animations (falls back to the assistant).
+    pub blender: Option<RoleBinding>,
+    /// Designs motion graphics: titles, lower thirds, keyframes (falls back to the assistant).
+    pub motion: Option<RoleBinding>,
+    pub video_workflow: Option<String>,
+    /// Hosted video backend (provider = fal|gemini|runway|luma). Mutually exclusive with `video_workflow` in the UI.
+    pub video_backend: Option<RoleBinding>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,6 +225,15 @@ pub struct Config {
     pub security: Security,
     pub render: RenderDefaults,
     pub ui: UiSettings,
+    pub edition: EditionSettings,
+    pub actions: ActionSettings,
+    pub roles: Roles,
+    pub videogen: VideoGenSettings,
+    /// Resolved helper paths written by `cinvar setup --pro-ai`, keyed by the environment
+    /// variable the adapter reads (for example `CINVAR_WHISPERX_PYTHON`). Persisting them here
+    /// means a customer never exports five `CINVAR_*_PYTHON` variables by hand.
+    #[serde(default)]
+    pub helpers: BTreeMap<String, String>,
 }
 
 impl Default for Config {
@@ -174,11 +246,34 @@ impl Default for Config {
             security: Security::default(),
             render: RenderDefaults::default(),
             ui: UiSettings::default(),
+            edition: EditionSettings::default(),
+            actions: ActionSettings::default(),
+            roles: Roles::default(),
+            videogen: VideoGenSettings::default(),
+            helpers: BTreeMap::new(),
         }
     }
 }
 
 impl Config {
+    /// A helper path recorded by `cinvar setup --pro-ai`.
+    pub fn helper(&self, key: &str) -> Option<&str> {
+        self.helpers.get(key).map(String::as_str)
+    }
+
+    /// Record (or replace) a helper path.
+    pub fn set_helper(&mut self, key: &str, value: &str) {
+        self.helpers.insert(key.to_string(), value.to_string());
+    }
+
+    /// Every helper as `(name, value)` pairs, for building a child-process environment.
+    pub fn helper_env(&self) -> Vec<(String, String)> {
+        self.helpers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
     pub fn path() -> PathBuf {
         paths::config_dir().join("config.toml")
     }
@@ -220,6 +315,30 @@ impl Config {
         self.profile(name)
     }
 
+    /// Resolve a role to (connection name, profile with the role's model applied).
+    /// Connections are the per-provider profiles; roles only pick a model on one of them.
+    pub fn role_profile(&self, role: &str) -> Result<(String, ModelProfile)> {
+        let own = match role {
+            "script" => self.roles.script.clone(),
+            "blender" => self.roles.blender.clone(),
+            "motion" => self.roles.motion.clone(),
+            _ => None,
+        };
+        let binding = own.or_else(|| self.roles.assistant.clone());
+        if let Some(b) = binding.filter(|b| !b.provider.is_empty()) {
+            let mut profile = self.models.get(&b.provider).cloned().unwrap_or_default();
+            profile.provider = b.provider.clone();
+            if !b.model.is_empty() {
+                profile.model = b.model.clone();
+            }
+            return Ok((b.provider, profile));
+        }
+        let name = self.active_model.clone().ok_or_else(|| {
+            Error::invalid("no model configured").with_hint("open Settings and pick a model for the assistant")
+        })?;
+        Ok((name.clone(), self.profile(&name)?.clone()))
+    }
+
     pub fn profile(&self, name: &str) -> Result<&ModelProfile> {
         self.models.get(name).ok_or_else(|| {
             Error::not_found(format!("model profile '{name}' is not configured"))
@@ -238,6 +357,18 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_config_without_roles_loads_and_roles_resolve() {
+        let c: Config = toml::from_str("version = 1\nactive_model = \"x\"\n[models.x]\nprovider = \"mock\"\nmodel = \"m\"\n").unwrap();
+        assert_eq!(c.roles, Roles::default());
+        assert_eq!(c.role_profile("assistant").unwrap().0, "x");
+        let mut c = c;
+        c.roles.script = Some(RoleBinding { provider: "deepseek".into(), model: "deepseek-chat".into() });
+        let (n, p) = c.role_profile("script").unwrap();
+        assert_eq!((n.as_str(), p.model.as_str(), p.provider.as_str()), ("deepseek", "deepseek-chat", "deepseek"));
+        assert_eq!(c.role_profile("assistant").unwrap().0, "x");
+    }
 
     #[test]
     fn roundtrips_toml() {

@@ -85,6 +85,10 @@ pub(crate) fn opt_bool(args: &Value, key: &str) -> Option<bool> {
     args.get(key).and_then(|v| v.as_bool())
 }
 
+pub(crate) fn opt_f64(args: &Value, key: &str) -> Option<f64> {
+    args.get(key).and_then(|v| v.as_f64())
+}
+
 fn spec(name: &str, group: &str, description: &str, input: Value, destructive: bool) -> ToolSpec {
     ToolSpec {
         name: name.to_string(),
@@ -141,6 +145,33 @@ fn project_summary(project: &Project) -> Value {
         "captions": project.captions.iter().map(|c| json!({"id": c.id, "cues": c.cues.len(), "language": c.language})).collect::<Vec<_>>(),
         "issues": crate::project::ops::validate(project),
     })
+}
+
+/// One plain (no-tools) call to a role's model, with a skill's guidance appended to the system prompt.
+/// Returns (reply text, "connection:model").
+fn specialist_chat(ctx: &ToolCtx, role: &str, system: &str, skill: &str, user: String) -> Result<(String, String)> {
+    let (name, profile) = ctx.config.role_profile(role)?;
+    let provider = crate::providers::build(&name, &profile, ctx.config)?;
+    let guidance = crate::skills::load_all().unwrap_or_default().into_iter().find(|k| k.name == skill)
+        .map(|k| format!("\n\nSkill guidance ({}):\n{}", k.title, k.body.chars().take(6000).collect::<String>())).unwrap_or_default();
+    let request = crate::providers::ChatRequest {
+        model: profile.model.clone(),
+        system: format!("{system}{guidance}"),
+        messages: vec![crate::providers::Message::user(user)],
+        tools: Vec::new(),
+        temperature: Some(0.4),
+        max_tokens: Some(profile.max_output_tokens.max(2048)),
+        json_mode: false,
+    };
+    let text = provider.chat(&request)?.text;
+    Ok((text, format!("{}:{}", name, profile.model)))
+}
+
+const MOTION_TOOLS: [&str; 4] = ["cinvar.timeline.text", "cinvar.timeline.animate", "cinvar.timeline.keyframe", "cinvar.timeline.effect"];
+
+fn clean_hex(v: &str) -> Option<String> {
+    let t = v.trim();
+    (t.len() == 7 && t.starts_with('#') && t[1..].chars().all(|c| c.is_ascii_hexdigit())).then(|| t.to_ascii_lowercase())
 }
 
 pub fn register_project(registry: &mut Registry) {
@@ -252,8 +283,8 @@ pub fn register_project(registry: &mut Registry) {
         |ctx: &mut ToolCtx, args: Value| {
             let asset_id = req_str(&args, "asset_id")?;
             let path = req_str(&args, "path")?;
-            within_agent_roots(ctx, std::path::Path::new(&path))?;
-            ctx.store.relink(ctx.project, &asset_id, std::path::Path::new(&path))?;
+            let (display, _handle) = open_agent_file(ctx, std::path::Path::new(&path))?;
+            ctx.store.relink(ctx.project, &asset_id, &display)?;
             ctx.persist()?;
             Ok(json!({"ok": true}))
         },
@@ -271,14 +302,20 @@ pub fn register_media(registry: &mut Registry) {
         ),
         |ctx: &mut ToolCtx, args: Value| {
             let path = req_str(&args, "path")?;
-            let source = crate::util::paths::absolutize(std::path::Path::new(&path), &std::env::current_dir().unwrap_or_default());
-            // Work on the resolved path from here on, so a link swapped in after the check is not followed.
-            let source = within_agent_roots(ctx, &source)?;
-            // Agent-facing import: only real media is copied into the project, judged by content.
-            crate::media::probe_untrusted(&source).map_err(|e| {
-                Error::new(crate::error::ErrorCode::InvalidInput, format!("not importable as media: {}", e.message))
-            })?;
-            let asset = ctx.store.import_asset(ctx.project, &source, "tool:import")?;
+            // One open decides both the boundary and the bytes: what is copied is what was
+            // validated, and the content policy is applied to the copied bytes.
+            let (display, file) = open_agent_file(ctx, std::path::Path::new(&path))?;
+            let name = display
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "media".into());
+            let asset = ctx.store.import_handle(
+                ctx.project,
+                file,
+                &name,
+                "tool:import",
+                crate::project::store::ImportPolicy::MediaOnly,
+            )?;
             ctx.persist()?;
             Ok(json!({
                 "asset_id": asset.id,
@@ -309,17 +346,39 @@ pub fn register_media(registry: &mut Registry) {
             collect_media(&dir, recursive, &mut files)?;
             files.sort();
             for file in files {
-                if let Err(err) = crate::media::probe_untrusted(&file) {
-                    imported.push(json!({"file": file.to_string_lossy(), "error": format!("skipped, not real media: {}", err.message)}));
-                    continue;
-                }
-                match ctx.store.import_asset(ctx.project, &file, "tool:import_folder") {
+                let handle = match open_agent_file(ctx, &file) {
+                    Ok((display, handle)) => (display, handle),
+                    Err(err) => {
+                        imported.push(json!({"file": file.to_string_lossy(), "error": err.message}));
+                        continue;
+                    }
+                };
+                let (display, handle) = handle;
+                let name = display
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "media".into());
+                match ctx.store.import_handle(
+                    ctx.project,
+                    handle,
+                    &name,
+                    "tool:import_folder",
+                    crate::project::store::ImportPolicy::MediaOnly,
+                ) {
                     Ok(asset) => imported.push(json!({
                         "asset_id": asset.id,
                         "file": asset.display_name(),
                         "duration": asset.info.as_ref().map(|i| i.duration.as_secs_f64()),
                     })),
-                    Err(err) => imported.push(json!({"file": file.to_string_lossy(), "error": err.message})),
+                    Err(err) => {
+                        // Keep the wording the media policy has always used for a file that is
+                        // not really media, but never print an internal staging path.
+                        let message = match err.message.strip_prefix("not importable as media: ") {
+                            Some(detail) => format!("skipped, not real media: {detail}"),
+                            None => err.message,
+                        };
+                        imported.push(json!({"file": file.to_string_lossy(), "error": message}));
+                    }
                 }
             }
             ctx.persist()?;
@@ -1558,6 +1617,7 @@ pub fn register_creative(registry: &mut Registry) {
                     *slot = v as u32;
                 }
             }
+            crate::edition::resolve(ctx.config).check_export(spec.width, spec.height)?;
             let base = ctx.store.cache_dir().join("blender");
             let render = crate::blender::render_animation_job(&spec, &base, &crate::blender::RenderControl::none())?;
             let asset = ctx.store.import_asset(ctx.project, &render.clip, "blender")?;
@@ -1573,6 +1633,10 @@ pub fn register_creative(registry: &mut Registry) {
                 )?;
                 placed = json!({"clip_id": clip_id, "track_id": track});
             }
+            // The asset must reach project.json, not just this call's memory: every later call
+            // loads the project from disk, so an unpersisted asset makes the returned asset_id
+            // unusable ("asset ... is not in this project").
+            ctx.persist()?;
             Ok(json!({
                 "file": render.clip.to_string_lossy(),
                 "asset_id": asset.id,
@@ -1730,17 +1794,172 @@ pub fn register_system(registry: &mut Registry) {
 
     registry.add(
         spec(
-            "cinvar.ai.run_workflow",
+            "cinvar.ai.design_blender",
             "ai",
-            "Run a registered ComfyUI workflow as a job. Parameters bind to workflow inputs; file parameters take a project-relative path or \"asset:<id>\" and are uploaded first. The workflow is validated against the server (missing nodes/models fail clearly). Poll with cinvar.render.status; then import the result with cinvar.ai.import_outputs.",
-            schema(json!({"workflow": s("Workflow name from cinvar.ai.workflows"), "params": {"type": "object", "description": "Parameter values"}, "timeout_seconds": i("Run limit (default 600, max 3600)")}), &["workflow"]),
+            "Have the BLENDER specialist model (its own picker in Settings) design a 3D animation from a plain-language brief. It returns validated arguments for cinvar.blender.animation (template, text, colour, duration, size); call that tool next with them. Use for logo reveals and 3D titles.",
+            schema(json!({"brief": s("What the animation is for, the text on screen, mood and brand colour"), "duration": i("Seconds (default 5)"), "aspect": s("16:9 (default) or 9:16")}), &["brief"]),
+            false,
+        ),
+        |ctx: &mut ToolCtx, args: Value| {
+            let brief = req_str(&args, "brief")?;
+            let secs = opt_int(&args, "duration").unwrap_or(5).clamp(2, 30);
+            let vertical = opt_str(&args, "aspect").as_deref() == Some("9:16");
+            let system = "You design 3D animations for Blender using FIXED templates. Reply with ONE JSON object and nothing else: {\"template\": \"logo_reveal\" | \"title_3d\", \"text\": \"<=60 chars\", \"color\": \"#rrggbb accent\", \"duration\": <seconds>}. Pick logo_reveal for a brand/logo sting, title_3d for a headline.";
+            let (reply, by) = specialist_chat(ctx, "blender", system, "blender-animation", format!("Brief: {brief}\nDuration: {secs}s"))?;
+            let v = crate::providers::extract_json_object(&reply).ok_or_else(|| Error::new(crate::error::ErrorCode::Provider, format!("the Blender model did not return a design. It said: {}", reply.chars().take(240).collect::<String>())))?;
+            let template = v["template"].as_str().unwrap_or("");
+            if !["logo_reveal", "title_3d"].contains(&template) {
+                return Err(Error::new(crate::error::ErrorCode::Provider, format!("the Blender model chose an unsupported template '{template}'")));
+            }
+            let text: String = v["text"].as_str().unwrap_or("").chars().filter(|c| !c.is_control()).take(60).collect();
+            if text.trim().is_empty() {
+                return Err(Error::new(crate::error::ErrorCode::Provider, "the Blender model returned no text for the animation"));
+            }
+            let color = v["color"].as_str().and_then(clean_hex).unwrap_or_else(|| "#4f8cff".into());
+            let duration = v["duration"].as_f64().unwrap_or(secs as f64).clamp(2.0, 30.0);
+            let (w, h) = if vertical { (1080, 1920) } else { (1920, 1080) };
+            Ok(json!({"arguments": {"template": template, "text": text, "color": color, "duration": duration, "width": w, "height": h}, "designed_by": by, "next": "call cinvar.blender.animation with these arguments (add place_at to put it on the timeline)"}))
+        },
+    );
+
+    registry.add(
+        spec(
+            "cinvar.ai.design_motion",
+            "ai",
+            "Have the MOTION-GRAPHICS specialist model (its own picker in Settings) plan titles, lower thirds and animations as a list of timeline tool calls. It returns steps (tool + arguments, restricted to text/animate/keyframe/effect tools); execute them in order with the normal tools. Use for lower thirds, animated titles, kinetic text, end screens.",
+            schema(json!({"brief": s("What graphics are needed, the exact text, style and where in the video"), "timeline_id": s("Optional timeline to design for (default: the first)")}), &["brief"]),
+            false,
+        ),
+        |ctx: &mut ToolCtx, args: Value| {
+            let brief = req_str(&args, "brief")?;
+            let tl_id = opt_str(&args, "timeline_id");
+            let ctxjson = {
+                let t = match tl_id.as_deref() { Some(id) => ctx.project.timelines.iter().find(|t| t.id == id), None => ctx.project.timelines.first() };
+                match t {
+                    Some(t) => json!({"timeline_id": t.id, "seconds": (t.duration().as_secs_f64() * 100.0).round() / 100.0, "size": format!("{}x{}", t.width, t.height), "tracks": t.tracks.iter().map(|tr| json!({"id": tr.id, "kind": format!("{:?}", tr.kind).to_lowercase(), "clips": tr.clips.iter().map(|c| json!({"id": c.id, "start": c.timeline_start.as_secs_f64()})).collect::<Vec<_>>()})).collect::<Vec<_>>()}),
+                    None => json!({"note": "no timeline yet"}),
+                }
+            };
+            let schemas: Vec<Value> = crate::tools::build_default().to_schemas().into_iter().filter(|t| MOTION_TOOLS.contains(&t.name.as_str())).map(|t| json!({"name": t.name, "description": t.description, "input_schema": t.input_schema})).collect();
+            let system = format!("You are a motion-graphics designer inside a video editor. Plan the graphics as timeline tool calls. Reply with ONE JSON object and nothing else: {{\"steps\": [{{\"tool\": \"<name>\", \"arguments\": {{...}}}}]}}. At most 12 steps. If a step needs the id of a clip created by an EARLIER step, write '$stepN' (N = that step's number, starting at 1) and never invent ids; existing clip ids are in the timeline context. Use ONLY these tools and their exact argument names: {}", serde_json::to_string(&schemas).unwrap_or_default());
+            let (reply, by) = specialist_chat(ctx, "motion", &system, "motion-graphics", format!("Brief: {brief}\nTimeline: {ctxjson}"))?;
+            let v = crate::providers::extract_json_object(&reply).ok_or_else(|| Error::new(crate::error::ErrorCode::Provider, format!("the motion-graphics model did not return a plan. It said: {}", reply.chars().take(240).collect::<String>())))?;
+            let mut steps = Vec::new();
+            for st in v["steps"].as_array().cloned().unwrap_or_default().into_iter().take(12) {
+                let tool = st["tool"].as_str().unwrap_or("");
+                if !MOTION_TOOLS.contains(&tool) || !st["arguments"].is_object() {
+                    return Err(Error::new(crate::error::ErrorCode::Provider, format!("the motion-graphics model proposed a step that is not allowed: '{tool}'")));
+                }
+                steps.push(json!({"tool": tool, "arguments": st["arguments"]}));
+            }
+            if steps.is_empty() {
+                return Err(Error::new(crate::error::ErrorCode::Provider, "the motion-graphics model returned no steps"));
+            }
+            Ok(json!({"steps": steps, "designed_by": by, "next": "execute these steps in order with the named tools. Where an argument is '$stepN', substitute the clip_id returned by step N. Verify with cinvar.qa.render_check after rendering"}))
+        },
+    );
+
+    registry.add(
+        spec(
+            "cinvar.ai.write_script",
+            "ai",
+            "Write a video script (narration / voice-over / on-screen text) with the user's SCRIPT-WRITER model, which may differ from the assistant model. Saves it in the project's scripts/ folder and returns the text. Follow with cinvar.captions.from_script to time it, or place it as text overlays.",
+            schema(json!({"brief": s("What the video is about and who it is for"), "duration_secs": i("Target spoken length in seconds (default 60)"), "style": s("Tone/format, e.g. punchy YouTube, calm documentary, ad read"), "name": s("File name stem (default script)")}), &["brief"]),
+            false,
+        ),
+        |ctx: &mut ToolCtx, args: Value| {
+            let brief = req_str(&args, "brief")?;
+            let secs = opt_int(&args, "duration_secs").unwrap_or(60).clamp(5, 1800);
+            let style = opt_str(&args, "style").unwrap_or_else(|| "clear and engaging".into());
+            let (name, profile) = ctx.config.role_profile("script")?;
+            let provider = crate::providers::build(&name, &profile, ctx.config)?;
+            let request = crate::providers::ChatRequest {
+                model: profile.model.clone(),
+                system: "You are a professional video scriptwriter. Output ONLY the script text to be spoken, no headings, stage directions or commentary. Paragraph breaks mark scene changes. Aim for about 2.5 spoken words per second.".into(),
+                messages: vec![crate::providers::Message::user(format!("Brief: {brief}\nTarget length: about {secs} seconds ({} words).\nStyle: {style}", secs * 5 / 2))],
+                tools: Vec::new(),
+                temperature: Some(profile.temperature),
+                max_tokens: Some(profile.max_output_tokens.max(1024)),
+                json_mode: false,
+            };
+            let text = provider.chat(&request)?.text.trim().to_string();
+            if text.is_empty() {
+                return Err(Error::new(crate::error::ErrorCode::Provider, "the script model returned nothing"));
+            }
+            let stem: String = opt_str(&args, "name").unwrap_or_else(|| "script".into()).chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').take(40).collect();
+            let dir = ctx.store.root.join("scripts");
+            crate::util::paths::ensure_dir(&dir)?;
+            let path = dir.join(format!("{}.txt", if stem.is_empty() { "script".into() } else { stem }));
+            crate::util::paths::write_atomic(&path, text.as_bytes())?;
+            Ok(json!({"script": text, "saved_to": path.to_string_lossy(), "words": text.split_whitespace().count(), "written_by": format!("{}:{}", name, profile.model)}))
+        },
+    );
+
+    registry.add(
+        spec(
+            "cinvar.ai.generate_video",
+            "ai",
+            "Generate a short video clip from a text prompt with the hosted video backend chosen in Settings (Gemini Omni, Runway, Luma or fal.ai). THIS COSTS REAL MONEY and is refused unless the user switched paid generation on; clips are limited in seconds per job and per day. Returns a job id: poll with cinvar.render.status, then import the clip with cinvar.ai.import_outputs. Prefer editing real footage; use this for b-roll or shots that cannot be filmed.",
+            schema(json!({"prompt": s("Describe the shot: subject, action, camera, lighting, style"), "seconds": i("Clip length in seconds (default 5)"), "aspect": s("16:9 (default) or 9:16"), "backend": s("Optional: gemini | runway | luma | fal (default: the one chosen in Settings)"), "model": s("Optional model id for that backend")}), &["prompt"]),
             false,
         ),
         |ctx: &mut ToolCtx, args: Value| {
             if !ctx.config.security.allow_network {
                 return Err(Error::new(crate::error::ErrorCode::PermissionDenied, "network access is disabled in configuration"));
             }
-            let name = req_str(&args, "workflow")?;
+            let prompt = req_str(&args, "prompt")?;
+            if prompt.len() > 4000 {
+                return Err(Error::invalid("prompt is too long (4000 characters max)"));
+            }
+            let seconds = opt_int(&args, "seconds").unwrap_or(5).clamp(1, 60) as u32;
+            let aspect = match opt_str(&args, "aspect").as_deref() { Some("9:16") => "9:16", _ => "16:9" }.to_string();
+            let chosen = match opt_str(&args, "backend") {
+                Some(b) => (b, opt_str(&args, "model")),
+                None => {
+                    let r = ctx.config.roles.video_backend.clone().filter(|r| !r.provider.is_empty()).ok_or_else(|| {
+                        Error::invalid("no video generation backend is selected").with_hint("pick one in Settings > Models for each job > Video generation")
+                    })?;
+                    (r.provider, opt_str(&args, "model").or(Some(r.model)))
+                }
+            };
+            let backend = crate::videogen::Backend::parse(&chosen.0).ok_or_else(|| Error::invalid(format!("unknown video backend '{}'", chosen.0)).with_hint("gemini | runway | luma | fal"))?;
+            let model = chosen.1.filter(|m| !m.is_empty()).unwrap_or_else(|| backend.models()[0].to_string());
+            if seconds > backend.max_seconds() {
+                return Err(Error::invalid(format!("{} accepts at most {} seconds per clip", backend.label(), backend.max_seconds())));
+            }
+            crate::videogen::check_budget(&ctx.config.videogen, seconds)?;
+            let key = crate::videogen::api_key(backend).ok_or_else(|| Error::new(crate::error::ErrorCode::PermissionDenied, format!("no API key for {}", backend.label())).with_hint("add it in Settings > Connections"))?;
+            crate::videogen::record(backend, &model, seconds)?;
+            let ep = crate::videogen::Endpoint::new(backend, key);
+            let request = crate::videogen::GenRequest { prompt, seconds, aspect, model: model.clone(), extra: Default::default() };
+            let dest = ctx.store.cache_dir().join("videogen");
+            let id = ctx.jobs.spawn("video_generation", move |job| {
+                let progress = |p: f32, m: &str| job.progress(p, m);
+                let cancelled = || job.cancelled();
+                let ctl = crate::videogen::Control { cancelled: &cancelled, progress: &progress, poll_every: std::time::Duration::from_secs(4), timeout: std::time::Duration::from_secs(1200) };
+                let files = crate::videogen::generate(&ep, &request, &dest, &ctl)?;
+                Ok(json!({"files": files.iter().map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>(), "backend": ep.backend.id(), "model": request.model, "seconds": request.seconds}))
+            });
+            Ok(json!({"job_id": id, "backend": backend.id(), "model": model, "seconds": seconds, "note": "billed by the provider; counted against today's seconds limit"}))
+        },
+    );
+
+    registry.add(
+        spec(
+            "cinvar.ai.run_workflow",
+            "ai",
+            "Run a registered ComfyUI workflow as a job. Parameters bind to workflow inputs; file parameters take a project-relative path or \"asset:<id>\" and are uploaded first. The workflow is validated against the server (missing nodes/models fail clearly). Poll with cinvar.render.status; then import the result with cinvar.ai.import_outputs.",
+            schema(json!({"workflow": s("Workflow name from cinvar.ai.workflows (default: the video-generation workflow chosen in Settings)"), "params": {"type": "object", "description": "Parameter values"}, "timeout_seconds": i("Run limit (default 600, max 3600)")}), &[]),
+            false,
+        ),
+        |ctx: &mut ToolCtx, args: Value| {
+            if !ctx.config.security.allow_network {
+                return Err(Error::new(crate::error::ErrorCode::PermissionDenied, "network access is disabled in configuration"));
+            }
+            let name = match opt_str(&args, "workflow") {
+                Some(n) => n,
+                None => ctx.config.roles.video_workflow.clone().ok_or_else(|| Error::invalid("no workflow given and no video-generation workflow is selected").with_hint("pick one in Settings, or see cinvar.ai.workflows"))?,
+            };
             let def = crate::comfy::load_registry(&crate::comfy::registry_dir()).into_iter().find(|d| d.name == name)
                 .ok_or_else(|| Error::not_found(format!("no registered workflow named '{name}'")).with_hint("see cinvar.ai.workflows"))?;
             let mut params = args.get("params").and_then(|v| v.as_object()).cloned().unwrap_or_default();
@@ -1780,6 +1999,133 @@ pub fn register_system(registry: &mut Registry) {
 
     registry.add(
         spec(
+            "cinvar.ai.auto_edit",
+            "ai",
+            "Autonomous highlight-reel editing: analyse every video in a folder, score highlight windows, select clips to fill a target runtime, and build a renderable timeline with crossfades, normalised audio and an optional title. Deterministic (no model, no network). Follow with cinvar.render.export and cinvar.qa.render_check.",
+            schema(json!({
+                "media_root": s("Folder containing raw video footage"),
+                "target_secs": i("Target runtime in seconds (default 60)"),
+                "vertical": b("Build a 1080x1920 vertical reel (default false)"),
+                "title": s("Optional opening title overlay text"),
+                "min_clip": i("Shortest clip to select, seconds (default 2)"),
+                "max_clip": i("Longest clip to select, seconds (default 6)"),
+                "instruction": s("Creative instruction; requires a scene index built by cinvar.scenes.index (e.g. \"the loudest celebrations\")"),
+                "captions": b("Transcribe speech and burn captions (requires a transcription engine)"),
+                "caption_preset": s("Caption style: subtitles, social, documentary, cinematic (default social)")
+            }), &["media_root"]),
+            false,
+        ),
+        |ctx: &mut ToolCtx, args: Value| {
+            let root = req_str(&args, "media_root")?;
+            let dir = crate::util::paths::absolutize(std::path::Path::new(&root), &std::env::current_dir().unwrap_or_default());
+            within_agent_roots(ctx, &dir)?;
+            let opts = crate::analysis::autoedit::AutoEditOptions {
+                target_secs: opt_f64(&args, "target_secs").unwrap_or(60.0),
+                min_clip: opt_f64(&args, "min_clip").unwrap_or(2.0),
+                max_clip: opt_f64(&args, "max_clip").unwrap_or(6.0),
+                vertical: opt_bool(&args, "vertical").unwrap_or(false),
+                title: opt_str(&args, "title"),
+                instruction: opt_str(&args, "instruction"),
+                captions: opt_bool(&args, "captions").unwrap_or(false),
+                silence_removal: opt_bool(&args, "silence_removal").unwrap_or(false),
+            };
+            let (plan, clips) = crate::analysis::autoedit::auto_edit(ctx.store, ctx.project, &dir, &opts)?;
+            let captions_out = if opt_bool(&args, "captions").unwrap_or(false) {
+                let preset = opt_str(&args, "caption_preset").unwrap_or_else(|| "social".into());
+                let out = crate::analysis::autoedit::generate_captions(ctx.store, ctx.project, &clips, None, &preset, plan.height > plan.width)?;
+                ctx.persist()?;
+                json!({"cues": out.cues, "engine": out.engine, "files_transcribed": out.files_transcribed})
+            } else {
+                Value::Null
+            };
+            Ok(json!({
+                "plan": plan.to_json(),
+                "clip_ids": clips,
+                "captions": captions_out,
+                "next": ["cinvar.render.export", "cinvar.render.status", "cinvar.qa.render_check"],
+            }))
+        },
+    );
+
+    registry.add(
+        spec(
+            "cinvar.scenes.index",
+            "ai",
+            "Build a searchable semantic scene index for a folder of footage. Each segment gets a description from a LOCAL vision model (Ollama, e.g. gemma3:4b) or a deterministic fallback when no model is reachable (clearly labelled \"deterministic\" - not model understanding). Runs entirely locally.",
+            schema(json!({
+                "media_root": s("Folder containing raw video footage"),
+                "model": s("Ollama vision model name (default gemma3:4b)"),
+                "ollama_url": s("Ollama base URL (default http://localhost:11434)")
+            }), &["media_root"]),
+            false,
+        ),
+        |ctx: &mut ToolCtx, args: Value| {
+            let root = req_str(&args, "media_root")?;
+            let dir = crate::util::paths::absolutize(std::path::Path::new(&root), &std::env::current_dir().unwrap_or_default());
+            within_agent_roots(ctx, &dir)?;
+            let opts = crate::analysis::semantic::IndexOptions {
+                ollama_url: opt_str(&args, "ollama_url").unwrap_or_else(|| "http://localhost:11434".into()),
+                model: opt_str(&args, "model").unwrap_or_else(|| "gemma3:4b".into()),
+            };
+            let index = crate::analysis::semantic::index_media(&dir, &opts)?;
+            let path = ctx.store.cache_dir().join("semantic-index.json");
+            index.save(&path)?;
+            Ok(json!({
+                "index": path.display().to_string(),
+                "segments": index.segments.len(),
+                "vision_available": index.vision_available,
+                "model": index.model,
+                "sample": index.segments.iter().take(5).map(|s| json!({
+                    "file": s.file_name, "start": s.start, "end": s.end,
+                    "description": s.description, "source": s.source,
+                })).collect::<Vec<_>>(),
+            }))
+        },
+    );
+
+    registry.add(
+        spec(
+            "cinvar.scenes.search",
+            "ai",
+            "Search the project's semantic scene index with free text. Returns ranked segments with file, timestamps, description and provenance. No hits means no matching footage exists - report that rather than inventing media.",
+            schema(json!({
+                "query": s("What to look for, e.g. \"someone celebrating\"")
+            }), &["query"]),
+            false,
+        ),
+        |ctx: &mut ToolCtx, args: Value| {
+            let query = req_str(&args, "query")?;
+            let path = ctx.store.cache_dir().join("semantic-index.json");
+            let index = crate::analysis::semantic::SceneIndex::load(&path)?;
+            let hits = crate::analysis::semantic::search(&index, &query);
+            let results: Vec<serde_json::Value> = hits
+                .iter()
+                .take(20)
+                .map(|(i, score)| {
+                    let seg = &index.segments[*i];
+                    json!({
+                        "segment_id": seg.id,
+                        "file": seg.file,
+                        "start": seg.start,
+                        "end": seg.end,
+                        "score": score,
+                        "description": seg.description,
+                        "subjects": seg.subjects,
+                        "source": seg.source,
+                    })
+                })
+                .collect();
+            Ok(json!({
+                "query": query,
+                "matches": results.len(),
+                "results": results,
+                "note": if hits.is_empty() { json!("no indexed footage matches this query") } else { json!(null) },
+            }))
+        },
+    );
+
+    registry.add(
+        spec(
             "cinvar.ai.import_outputs",
             "ai",
             "Import the finished outputs of an AI workflow job into the project as assets, optionally placing the first video/image on the timeline.",
@@ -1808,6 +2154,9 @@ pub fn register_system(registry: &mut Registry) {
                 }
                 imported.push(asset.id);
             }
+            // Same rule as cinvar.blender.animation: an imported asset that only exists in memory
+            // is an asset id no later tool call can use.
+            ctx.persist()?;
             Ok(json!({"assets": imported, "placed": placed}))
         },
     );
@@ -2245,6 +2594,163 @@ pub fn register_captions(registry: &mut Registry) {
         },
     );
 
+
+    registry.add(
+        spec(
+            "cinvar.captions.word_level",
+            "captions",
+            "Transcribe a media file with WORD-level timestamps (WhisperX) and optionally write an ASS karaoke caption file where each word highlights as it is spoken. Use this when sentence-level captions are not good enough: the result carries per-word start and end times, so nothing has to be interpolated or guessed. Writes an .srt alongside, and an .ass when ass_out is given.",
+            schema(
+                json!({
+                    "path": s("Media file to transcribe (audio or video)"),
+                    "language": s("Optional ISO language, for example en"),
+                    "vocab": s("Comma-separated custom vocabulary (brand names, technical terms)"),
+                    "ass_out": s("Optional path for a karaoke ASS file built from the word timings"),
+                    "srt_out": s("Optional path for a plain SRT file"),
+                    "width": i("Caption canvas width for the ASS layout (default 1920)"),
+                    "height": i("Caption canvas height for the ASS layout (default 1080)"),
+                    "vertical": json!({"type": "boolean", "description": "Use the 9:16 safe-area layout"})
+                }),
+                &["path"],
+            ),
+            false,
+        ),
+        |ctx: &mut ToolCtx, args: Value| {
+            crate::edition::resolve(ctx.config)
+                .check_feature(crate::edition::Feature::CaptionsWordLevel)?;
+            let py = {
+                let from_env = std::env::var("CINVAR_WHISPERX_PYTHON")
+                    .ok()
+                    .filter(|v| !v.trim().is_empty());
+                let from_cfg = ctx
+                    .config
+                    .helper("CINVAR_WHISPERX_PYTHON")
+                    .map(str::to_string);
+                match from_env.or(from_cfg) {
+                    Some(path) => std::path::PathBuf::from(path),
+                    None => {
+                        return Err(Error::new(
+                            crate::error::ErrorCode::DependencyMissing,
+                            "word-level transcription needs WhisperX, which is not configured",
+                        )
+                        .with_hint(
+                            "run `cinvar setup --pro-ai`, or set CINVAR_WHISPERX_PYTHON to its interpreter",
+                        ))
+                    }
+                }
+            };
+            let raw = req_str(&args, "path")?;
+            let media = within_agent_roots(ctx, std::path::Path::new(&raw))?;
+            let work = crate::util::paths::data_dir().join("word-level");
+            crate::util::paths::ensure_dir(&work)?;
+            let wav = work.join("audio.wav");
+            let ffmpeg = crate::util::proc::require("ffmpeg")?;
+            crate::util::proc::run(
+                &ffmpeg,
+                &[
+                    "-y".into(),
+                    "-v".into(),
+                    "error".into(),
+                    "-i".into(),
+                    media.to_string_lossy().to_string(),
+                    "-ac".into(),
+                    "1".into(),
+                    "-ar".into(),
+                    "16000".into(),
+                    "-c:a".into(),
+                    "pcm_s16le".into(),
+                    wav.to_string_lossy().to_string(),
+                ],
+                &crate::util::proc::ProcOpts::default(),
+            )?;
+            let vocab: Vec<String> = opt_str(&args, "vocab")
+                .map(|v| {
+                    v.split(',')
+                        .map(|t| t.trim().to_string())
+                        .filter(|t| !t.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
+            let language = opt_str(&args, "language");
+            let job = work.join(format!("job-{}", std::process::id()));
+            let transcript = crate::captions::whisperx::run_whisperx_with_vocab(
+                &py,
+                &wav,
+                &job,
+                language.as_deref(),
+                &vocab,
+            )?;
+            let srt_path = opt_str(&args, "srt_out")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| job.join("words.srt"));
+            std::fs::write(
+                &srt_path,
+                crate::captions::whisperx::srt_from_segments(&transcript.segments),
+            )
+            .map_err(|e| {
+                Error::new(
+                    crate::error::ErrorCode::Io,
+                    format!("write {}: {e}", srt_path.display()),
+                )
+            })?;
+            let mut ass_written: Option<String> = None;
+            if let Some(ass_out) = opt_str(&args, "ass_out") {
+                let width = args.get("width").and_then(|v| v.as_u64()).unwrap_or(1920) as u32;
+                let height = args.get("height").and_then(|v| v.as_u64()).unwrap_or(1080) as u32;
+                let vertical = args
+                    .get("vertical")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let lines: Vec<crate::captions::ass::AssLine> = transcript
+                    .segments
+                    .iter()
+                    .map(|seg| crate::captions::ass::AssLine {
+                        start: seg.start,
+                        end: seg.end,
+                        text: seg.text.clone(),
+                        words: transcript
+                            .words
+                            .iter()
+                            .filter(|w| w.start >= seg.start - 0.05 && w.end <= seg.end + 0.05)
+                            .map(|w| crate::captions::ass::AssWord {
+                                text: w.word.clone(),
+                                start: w.start,
+                                end: w.end,
+                            })
+                            .collect(),
+                    })
+                    .collect();
+                let layout = if vertical {
+                    crate::captions::ass::Layout::Vertical
+                } else {
+                    crate::captions::ass::Layout::Landscape
+                };
+                let script = crate::captions::ass::generate_ass(
+                    &lines,
+                    width,
+                    height,
+                    layout,
+                    &crate::captions::ass::AssStyle::default(),
+                )?;
+                std::fs::write(&ass_out, script).map_err(|e| {
+                    Error::new(
+                        crate::error::ErrorCode::Io,
+                        format!("write {ass_out}: {e}"),
+                    )
+                })?;
+                ass_written = Some(ass_out);
+            }
+            Ok(json!({
+                "engine": "whisperx",
+                "words": transcript.words.len(),
+                "segments": transcript.segments.len(),
+                "srt": srt_path.to_string_lossy(),
+                "ass": ass_written,
+                "word_timings": transcript.words,
+            }))
+        },
+    );
+
     registry.add(
         spec(
             "cinvar.captions.style",
@@ -2343,15 +2849,16 @@ pub fn register_color(registry: &mut Registry) {
             if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("cube")) != Some(true) {
                 return Err(Error::invalid("only .cube LUT files can be imported"));
             }
-            within_agent_roots(ctx, &path)?;
-            let size = crate::color::validate_cube(&path)?;
-            let name = path.file_name().and_then(|n| n.to_str()).map(text::slugify).unwrap_or_else(|| "lut".into());
+            let (display, mut file) = open_agent_file(ctx, &path)?;
+            let size = crate::color::validate_cube(&display)?;
+            let name = display.file_name().and_then(|n| n.to_str()).map(text::slugify).unwrap_or_else(|| "lut".into());
             let rel = format!("luts/{name}.cube");
-            let dest = ctx.store.root.join(&rel);
-            crate::util::paths::ensure_dir(&ctx.store.root.join("luts"))?;
-            crate::util::paths::unlink_if_symlink(&dest);
-            std::fs::copy(&path, &dest)?;
-            Ok(json!({"lut": rel, "size": size}))
+            let luts = ctx.store.root.join("luts");
+            crate::util::paths::ensure_dir(&luts)?;
+            // Copied from the descriptor that was validated, published atomically inside luts/.
+            let luts_dir = crate::util::fshandle::Dir::open(&luts)?;
+            let (_, copied) = crate::util::fshandle::copy_hash_into(&luts_dir, &format!("{name}.cube"), &mut file)?;
+            Ok(json!({"lut": rel, "size": size, "bytes": copied}))
         },
     );
 }
@@ -2374,6 +2881,44 @@ fn color_choice(ctx: &ToolCtx, args: &Value) -> Result<crate::color::ConfigChoic
 /// human configured (`security.media_roots`, `CINVAR_MEDIA_ROOTS`, `--media-root`). Symlinks are
 /// resolved before the check. Footage elsewhere is brought in by the human (`cinvar media import`,
 /// `cinvar connect --footage`) or by adding its folder as a media root.
+/// Opens an agent-named file through the boundary: the containment decision and the open are
+/// one kernel operation (see `util::fshandle`), so a component swapped between them cannot
+/// redirect the read. Tools that copy or read bytes from an agent-named path use this and hand
+/// the handle on; `within_agent_roots` remains for tools that only need the resolved name.
+fn open_agent_file(
+    ctx: &ToolCtx,
+    path: &std::path::Path,
+) -> Result<(std::path::PathBuf, std::fs::File)> {
+    let abs = crate::util::paths::absolutize(path, &std::env::current_dir().unwrap_or_default());
+    let mut allowed: Vec<std::path::PathBuf> = ctx.config.security.effective_media_roots();
+    allowed.push(ctx.store.root.clone());
+    for root in allowed {
+        if let Ok(dir) = crate::util::fshandle::Dir::open(&root) {
+            // Paths that do not belong to this root are rejected lexically before any syscall,
+            // so trying every root costs nothing.
+            match dir.open_file(&abs) {
+                Ok(hit) => return Ok(hit),
+                Err(err) => {
+                    // The path does belong to this root: report why it could not be opened
+                    // (missing, not a regular file, or a link that leaves the root) instead of
+                    // claiming it is outside the project.
+                    if abs.starts_with(crate::util::paths::normalize(&root)) {
+                        return Err(err);
+                    }
+                }
+            }
+        }
+    }
+    Err(Error::new(
+        crate::error::ErrorCode::PermissionDenied,
+        format!(
+            "{} is outside the project; agents may only read inside it and the folders you allow",
+            path.display()
+        ),
+    )
+    .with_hint("bring it in yourself with `cinvar media import FILE`, or allow its folder: `--media-root DIR`, CINVAR_MEDIA_ROOTS, or security.media_roots in the configuration"))
+}
+
 fn within_agent_roots(ctx: &ToolCtx, path: &std::path::Path) -> Result<std::path::PathBuf> {
     let real = path
         .canonicalize()

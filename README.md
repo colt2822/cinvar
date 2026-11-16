@@ -13,6 +13,20 @@ agents), or with your own model (OpenAI-compatible, Anthropic, Gemini, Ollama, l
 machine: **no account, no telemetry, no subscription, no ELYREON services, no paid API required.** RunPod cloud
 rendering and ComfyUI are optional add-ons you connect with your own accounts/installs.
 
+## Editions: Free and Pro
+
+This repository is **CINVAR Free**: the Apache-2.0 core, free forever. Unlimited ordinary editing, no watermark, no
+export-count limit, no account, local storage. Export is limited to **2048x1080** (or 1080x2048 portrait).
+
+**CINVAR Pro Early Access** ($29.99, one-time, perpetual license) adds 4K/8K export where your hardware and FFmpeg
+support it, batch rendering, saved export presets and advanced color grading, activated offline with a signed license
+file (`cinvar edition activate --file license.json`). Pro is the same core plus a separate, proprietary module that is
+**not** part of this repository. Pro is sold at <https://elyraon.com.co/cinvar/>.
+
+The 2048x1080 ceiling in the open core is a product limit, not DRM: it is Apache-2.0 source and you may modify it under
+that license. Cloud rendering (RunPod) is experimental; AI auto-editing is not a shipped Pro feature.
+See [docs/OPEN_CORE.md](docs/OPEN_CORE.md) and [docs/PRO_ACTIVATION.md](docs/PRO_ACTIVATION.md).
+
 ## Launching the app (no terminal)
 
 Linux: run `packaging/linux/install-desktop.sh` once (after building, or from the release tarball). A **CINVAR** icon appears in your app menu and on the Desktop; click it and the studio opens in its own window (projects are saved in `~/CINVAR Projects`). Needs FFmpeg installed. Windows/macOS have no click-to-run packaging yet. In the studio: drag media in, chat with the assistant, preview/export, and customise theme, accent colour, layout and shortcuts under ⚙ (Ctrl+K opens the command palette).

@@ -4,6 +4,11 @@ use crate::config::{Config, ModelProfile};
 use crate::error::{Error, ErrorCode, Result};
 
 mod anthropic;
+mod claude_cli;
+/// First balanced JSON object in a model reply (tolerates prose and code fences around it).
+pub fn extract_json_object(text: &str) -> Option<serde_json::Value> {
+    claude_cli::extract_json(text)
+}
 mod common;
 mod gemini;
 mod mock;
@@ -167,7 +172,7 @@ pub trait Provider: Send + Sync {
 }
 
 /// Every provider name build() accepts, for the hint of an unknown one.
-const SUPPORTED_PROVIDERS: &str = "openai, openai-compatible, anthropic, gemini, google, deepseek, xai, grok, openrouter, ollama, llamacpp, local, mock";
+const SUPPORTED_PROVIDERS: &str = "openai, openai-compatible, anthropic, gemini, google, deepseek, xai, grok, openrouter, ollama, llamacpp, local, claude-cli, mock";
 
 /// Build the provider adapter for one model profile.
 ///
@@ -185,6 +190,9 @@ pub fn build(name: &str, profile: &ModelProfile, config: &Config) -> Result<Box<
     }
     if provider == "mock" {
         return Ok(Box::new(mock::MockProvider::new(profile)));
+    }
+    if provider == "claude-cli" {
+        return Ok(Box::new(claude_cli::ClaudeCliProvider::new(profile)));
     }
     if !config.security.allow_network {
         return Err(Error::new(

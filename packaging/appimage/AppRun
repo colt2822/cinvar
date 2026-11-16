@@ -1,0 +1,4 @@
+#!/bin/sh
+# AppImage entry point: the payload lives in usr/bin, the UI launcher in usr/share/cinvar.
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/bin/cinvar" "$@"

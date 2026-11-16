@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "id": "proj_ad179eab",
+  "name": "test",
+  "created_at": "2026-11-15T05:18:46Z",
+  "updated_at": "2026-11-15T05:18:46Z",
+  "revision": 1,
+  "settings": {
+    "autosave_seconds": 120,
+    "snapshot_limit": 60,
+    "allow_network_upload": false
+  },
+  "style": {
+    "mood": null,
+    "notes": [],
+    "caption_style": {
+      "font": null,
+      "size": 48,
+      "color": "white",
+      "outline_color": "black",
+      "outline_width": 4,
+      "position": "bottom",
+      "max_chars_per_line": 28,
+      "uppercase": false,
+      "background": null
+    }
+  },
+  "assets": [],
+  "timelines": [],
+  "active_timeline": null,
+  "captions": [],
+  "markers": [],
+  "plans": [],
+  "notes": [],
+  "render": {
+    "width": 1920,
+    "height": 1080,
+    "fps": "30",
+    "format": "mp4",
+    "video_codec": "h264",
+    "crf": 20,
+    "preset": "medium",
+    "audio_codec": "aac",
+    "audio_bitrate": "192k",
+    "hardware": "auto",
+    "loudness_target": -14.0
+  }
+}

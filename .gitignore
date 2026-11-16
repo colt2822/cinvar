@@ -19,3 +19,8 @@ dist/
 /demos/**/trace*.json
 /demos/**/*.stderr
 /quickstart-out/
+dist-editions/
+target-release-editions/
+
+__pycache__/
+*.pyc

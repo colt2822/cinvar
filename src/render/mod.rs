@@ -16,14 +16,24 @@ use crate::util::time::{Fps, Time};
 
 mod anim;
 mod encode;
+mod fonts;
 
 pub use anim::{
     check_easing as check_keyframe_easing, check_property as check_keyframe_property,
     ANIMATABLE as ANIMATABLE_PROPERTIES, EASINGS as KEYFRAME_EASINGS,
 };
 pub mod capability;
+pub mod extensions;
+pub use encode::valid_bitrate;
 mod graph;
+pub mod preview;
 pub mod verify;
+
+/// Name of the Pro feature a codec name needs ("ProRes", "DNxHR", "AV1"), or `None` for the free
+/// codecs. Re-exported so the CLI can refuse a Pro codec before a render job is even queued.
+pub fn pro_codec_name(codec: &str) -> Option<&'static str> {
+    encode::pro_codec(codec)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderRequest {
@@ -45,6 +55,19 @@ pub struct RenderRequest {
     /// 8 (default) or 10. Validated against the encoder before the render is accepted.
     #[serde(default)]
     pub bit_depth: Option<u8>,
+    /// Entitlements to enforce. `None` (the normal case) means "resolve from this machine's
+    /// config and license", so a caller that forgets to set it is still gated. Never serialized:
+    /// a request received over the wire cannot carry its own entitlements.
+    /// Target video bitrate (e.g. "8M", "5000k"). When set it replaces CRF quality control.
+    #[serde(default)]
+    pub video_bitrate: Option<String>,
+    #[serde(skip)]
+    pub entitlements: Option<std::sync::Arc<crate::edition::Entitlements>>,
+    /// `--pro-preview`: run a Pro-gated size/codec for real, truncated to the first
+    /// `edition::PRO_PREVIEW_SECS` seconds and watermarked. Never accepted from the wire: like
+    /// `entitlements`, it is skipped by serde so a request over MCP cannot grant it.
+    #[serde(skip)]
+    pub pro_preview: bool,
 }
 
 impl RenderRequest {
@@ -64,6 +87,9 @@ impl RenderRequest {
             burn_captions: true,
             size_preset: None,
             bit_depth: None,
+            video_bitrate: None,
+            entitlements: None,
+            pro_preview: false,
         }
     }
 }
@@ -253,6 +279,37 @@ pub fn plan_render(
         );
     }
 
+    let entitlements = request
+        .entitlements
+        .clone()
+        .unwrap_or_else(crate::edition::resolve_from_disk);
+    let allow_preview = request.pro_preview;
+    // A size nobody asked for (no width/height/preset, not a preview) that this edition cannot
+    // export -- e.g. a 4K project made in Pro and opened in Free -- is fitted down, with a
+    // warning, instead of leaving the user with an Export button that can never work. An explicit
+    // request above the limit is still refused, never silently changed. A preview keeps the real
+    // canvas: showing the real thing is the point.
+    let implicit_size = request.width.is_none() && request.height.is_none() && request.size_preset.is_none();
+    let (width, height, fit_warning) = match entitlements.fit_export(width, height) {
+        Some((w, h)) if implicit_size && !request.preview && !allow_preview => (
+            w,
+            h,
+            Some(format!(
+                "timeline canvas {width}x{height} exceeds this edition's export limit; exporting at {w}x{h}"
+            )),
+        ),
+        _ => (width, height, None),
+    };
+    // Edition gates, both asked before a single frame exists. They honour --pro-preview, which
+    // turns a refusal into a real but shortened, watermarked render.
+    let size_grant = entitlements.gate_export(width, height, allow_preview)?;
+    let requested_codec = encode::requested_codec(project, request);
+    let codec_grant = match encode::pro_codec(requested_codec) {
+        Some(_) => entitlements.gate_feature(crate::edition::Feature::ProCodecs, allow_preview)?,
+        None => crate::edition::Grant::Included,
+    };
+    let preview_limited = size_grant.is_preview() || codec_grant.is_preview();
+
     let fps = request.fps.unwrap_or(timeline.fps);
     if !fps.is_valid() || fps.as_f64() > 240.0 {
         return Err(Error::invalid(format!(
@@ -270,7 +327,11 @@ pub fn plan_render(
             "pass a range whose end is after its start, or add clips to the timeline first",
         ));
     }
-    let duration = range_end - range_start;
+    // A Pro preview is the real render cut short: the first seconds of what was asked for.
+    let mut duration = range_end - range_start;
+    if preview_limited && duration.as_secs_f64() > crate::edition::PRO_PREVIEW_SECS {
+        duration = Time::from_secs_f64(crate::edition::PRO_PREVIEW_SECS);
+    }
 
     let crf = request
         .crf
@@ -306,6 +367,12 @@ pub fn plan_render(
         sample_rate,
     };
     let built = graph::build(project, store, timeline, &params)?;
+    // The preview notice is burned by the same ffmpeg pass that renders the frames.
+    let (filtergraph, video_label) = if preview_limited {
+        preview::overlay_graph(&built.filtergraph, &built.video_label, width, height)
+    } else {
+        (built.filtergraph.clone(), built.video_label.clone())
+    };
     let enc = encode::choose(
         project,
         request,
@@ -338,9 +405,9 @@ pub fn plan_render(
         args.extend(input.clone());
     }
     args.push("-filter_complex".to_string());
-    args.push(built.filtergraph.clone());
+    args.push(filtergraph.clone());
     args.push("-map".to_string());
-    args.push(format!("[{}]", built.video_label));
+    args.push(format!("[{video_label}]"));
     if let Some(audio) = &built.audio_label {
         args.push("-map".to_string());
         args.push(format!("[{audio}]"));
@@ -408,9 +475,20 @@ pub fn plan_render(
         output_dir: request.output.parent().unwrap_or(Path::new(".")),
     });
     let mut warnings = built.warnings.clone();
+    if preview_limited {
+        warnings.insert(
+            0,
+            format!(
+                "PRO PREVIEW: rendering the first {}s at {width}x{height} with a \"{}\" overlay; without --pro-preview this render is refused by the Free edition",
+                secs(duration.as_secs_f64()).trim_end_matches('0').trim_end_matches('.'),
+                crate::edition::PRO_PREVIEW_OVERLAY
+            ),
+        );
+    }
     warnings.extend(enc.warnings.clone());
     warnings.extend(preflight.warnings.clone());
     warnings.extend(thread_warning);
+    warnings.extend(fit_warning);
     if let Some(ext) = request.output.extension().and_then(|e| e.to_str()) {
         let ext = ext.to_ascii_lowercase();
         if !ext.is_empty() && ext != enc.container {
@@ -458,7 +536,7 @@ pub fn plan_render(
     Ok(RenderPlan {
         args,
         inputs: built.inputs,
-        filtergraph: built.filtergraph,
+        filtergraph,
         output: request.output.clone(),
         partial_output,
         width,

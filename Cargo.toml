@@ -1,6 +1,6 @@
 [package]
 name = "cinvar"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
@@ -10,6 +10,7 @@ repository = "https://github.com/colt2822/cinvar"
 readme = "README.md"
 keywords = ["video", "ffmpeg", "mcp", "ai-agents", "blender"]
 categories = ["multimedia::video", "command-line-utilities"]
+
 
 [[bin]]
 name = "cinvar"
@@ -30,9 +31,26 @@ regex = "1"
 base64 = "0.22"
 tempfile = "3"
 tiny_http = "0.12"
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[features]
+# Test/dev only: makes the edition limits observe-only by default. Never enabled in release builds
+# (it is only switched on for `cargo test` through the self dev-dependency below).
+edition-observe = []
+# Operator tooling only (license signing). Not part of the distributed packages.
+issuer = []
+
+[[bin]]
+name = "cinvar-license-issuer"
+path = "src/bin/cinvar-license-issuer.rs"
+required-features = ["issuer"]
 
 [dev-dependencies]
 tempfile = "3"
+cinvar = { path = ".", package = "cinvar", features = ["edition-observe"] }
 
 [profile.release]
 opt-level = 2

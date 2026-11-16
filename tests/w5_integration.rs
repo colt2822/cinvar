@@ -659,8 +659,8 @@ fn empty_timeline_skips_the_duration_check_with_a_detail() {
     );
     assert_eq!(
         report.checks.len(),
-        8,
-        "every check is always reported (incl. black_flash)"
+        11,
+        "every check is always reported (incl. black_flash, frozen_frames, dead_air, composite_visibility)"
     );
     assert!(report.passed);
     let score = report.score.unwrap();

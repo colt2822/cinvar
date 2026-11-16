@@ -118,16 +118,12 @@ fn stage_lut_for_filter(src: &std::path::Path) -> Option<String> {
     if !staged.is_file() {
         std::fs::write(&staged, &bytes).ok()?;
     }
-    let mut text = staged.to_string_lossy().to_string();
-    if cfg!(windows) {
-        // Backslashes and the drive colon are filtergraph syntax; forward slashes work on Windows.
-        text = text.replace('\\', "/").replace(':', "\\:");
-    }
-    if text.contains('\'') {
-        return None;
-    }
-    Some(format!("'{text}'"))
+    super::fonts::filter_path(&staged)
 }
+
+/// Seconds of padding past the render duration given to the ducking compressor's inputs; the
+/// compressor's own end-of-stream handling is not reliable enough to sit on the last frame.
+const DUCK_TAIL_MARGIN: f64 = 2.0;
 
 fn escape_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 8);
@@ -216,18 +212,20 @@ fn drawtext(
             (12.0 * sf).round().max(2.0) as u32
         ));
     }
-    if let Some(font) = font {
-        let looks_like_path = font.contains('/')
-            || font.contains('\\')
-            || font.ends_with(".ttf")
-            || font.ends_with(".otf");
-        if looks_like_path {
-            if Path::new(font).is_file() {
-                out.push_str(&format!(":fontfile={}", escape_text(font)));
+    // An explicit font file keeps drawtext away from fontconfig, which crashes on the Windows
+    // FFmpeg builds instead of reporting that it has no configuration. A path the filtergraph
+    // cannot carry is staged rather than dropped, because a dropped `fontfile=` renders a
+    // different face without any error.
+    match super::fonts::drawtext_font(font) {
+        Some(super::fonts::FontChoice::File(path)) => {
+            if let Some(quoted) = super::fonts::fontfile_option(&path) {
+                out.push_str(&format!(":fontfile={quoted}"));
             }
-        } else if !font.trim().is_empty() {
-            out.push_str(&format!(":font={}", escape_text(font)));
         }
+        Some(super::fonts::FontChoice::Family(name)) => {
+            out.push_str(&format!(":font={}", escape_text(&name)));
+        }
+        None => {}
     }
     if text.contains('\n') {
         out.push_str(&format!(":line_spacing={}", (10.0 * sf).round() as i32));
@@ -747,10 +745,19 @@ impl<'a> Builder<'a> {
                     "clip '{}': the speed effect is ignored; use the clip speed setting instead",
                     clip.name
                 )),
-                other => self.warn(format!(
-                    "clip '{}': effect '{other}' is not supported by the renderer and was skipped",
-                    clip.name
-                )),
+                other => match super::extensions::effect_filter(other) {
+                    Some(filter) => match filter(&effect.params) {
+                        Ok(extra) => steps.extend(extra),
+                        Err(reason) => self.warn(format!(
+                            "clip '{}': effect '{other}' skipped: {reason}",
+                            clip.name
+                        )),
+                    },
+                    None => self.warn(format!(
+                        "clip '{}': effect '{other}' is not supported by the renderer and was skipped",
+                        clip.name
+                    )),
+                },
             }
         }
 
@@ -882,7 +889,8 @@ impl<'a> Builder<'a> {
         steps.push("format=yuv420p".to_string());
 
         // Transitions.
-        let mut alpha = opacity < 0.999 || ex_op.is_some() || force_alpha;
+        // A source that carries alpha must not be flattened by the final yuv420p conform.
+        let mut alpha = opacity < 0.999 || ex_op.is_some() || force_alpha || _info.has_alpha;
         let mut tail_clone = Time::ZERO;
         if let Some(transition) = clip
             .transition_out
@@ -1370,19 +1378,37 @@ pub(super) fn build(
                 .map(|_| builder.label("sc"))
                 .collect();
             let outs: String = copies.iter().map(|c| format!("[{c}]")).collect();
-            // The sidechain filter stops when its sidechain input ends, so pad speech to full length.
+            // sidechaincompress ends its output when an input ends, and ffmpeg 8.0.x drops up to
+            // ~1.2 s of the music bed after the sidechain's real content ends (nondeterministic,
+            // 6.1 and 8.1 are exact). Padding both inputs past the render duration and trimming
+            // after the compressor keeps the music audible to the last frame on every build.
+            let duration = params.duration.as_secs_f64();
+            let padded_dur = secs(duration + DUCK_TAIL_MARGIN);
             builder.audio_chains.push(format!(
-                "[{speech}]apad=whole_dur={},asplit={}{outs}",
-                secs(params.duration.as_secs_f64()),
+                "[{speech}]apad=whole_dur={padded_dur},asplit={}{outs}",
                 copies.len()
             ));
-            audio_labels = vec![copies[0].clone()];
+            let speech_mix = builder.label("spmix");
+            builder.audio_chains.push(format!(
+                "[{}]atrim=end={}[{speech_mix}]",
+                copies[0],
+                secs(duration)
+            ));
+            audio_labels = vec![speech_mix];
             for (n, ducked) in ducked_labels.iter().enumerate() {
-                let out = builder.label("duck");
+                let padded = builder.label("dpad");
+                builder
+                    .audio_chains
+                    .push(format!("[{ducked}]apad=whole_dur={padded_dur}[{padded}]"));
+                let compressed = builder.label("duck");
                 builder.audio_chains.push(format!(
-                    "[{ducked}][{}]sidechaincompress=threshold=0.02:ratio=12:attack=15:release=500:makeup=1[{out}]",
+                    "[{padded}][{}]sidechaincompress=threshold=0.02:ratio=12:attack=15:release=500:makeup=1[{compressed}]",
                     copies[n + 1]
                 ));
+                let out = builder.label("ducktrim");
+                builder
+                    .audio_chains
+                    .push(format!("[{compressed}]atrim=end={}[{out}]", secs(duration)));
                 audio_labels.push(out);
             }
         }
@@ -1529,6 +1555,229 @@ mod tests {
             assert!(
                 (product - speed).abs() < 1e-4,
                 "stages multiply back to {speed}: {chain:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn drawtext_uses_an_explicit_font_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let font = dir.path().join("DejaVu Sans.ttf");
+        std::fs::write(&font, b"").unwrap();
+        let spec = drawtext(
+            "hello",
+            40,
+            "white",
+            "black",
+            2,
+            None,
+            TextPosition::Bottom,
+            TextAlign::Center,
+            Some(font.to_str().unwrap()),
+            None,
+            &TextMotion::default(),
+            1.0,
+        );
+        assert!(spec.contains(":fontfile='"), "{spec}");
+        assert!(spec.contains("DejaVu Sans.ttf'"), "{spec}");
+        assert!(!spec.contains(":font="), "{spec}");
+    }
+
+    #[test]
+    fn ffmpeg_accepts_a_quoted_font_file_path() {
+        let has_drawtext = crate::util::proc::which("ffmpeg").is_some()
+            && std::process::Command::new("ffmpeg")
+                .args(["-hide_banner", "-filters"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).contains(" drawtext "))
+                .unwrap_or(false);
+        if !has_drawtext {
+            return;
+        }
+        // A font path with a space is where filtergraph quoting earns its keep.
+        let source = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        ]
+        .iter()
+        .map(Path::new)
+        .find(|path| path.is_file());
+        let Some(source) = source else { return };
+        let dir = tempfile::tempdir().unwrap();
+        let fonts = dir.path().join("Fonts With Spaces");
+        std::fs::create_dir_all(&fonts).unwrap();
+        let font = fonts.join("DejaVu Sans.ttf");
+        std::fs::copy(source, &font).unwrap();
+        let spec = drawtext(
+            "hi",
+            40,
+            "white",
+            "black",
+            0,
+            None,
+            TextPosition::Center,
+            TextAlign::Center,
+            Some(font.to_str().unwrap()),
+            None,
+            &TextMotion::default(),
+            1.0,
+        );
+        let out = dir.path().join("t.png");
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=320x180",
+                "-vf",
+                &spec,
+                "-frames:v",
+                "1",
+                out.to_str().unwrap(),
+            ])
+            .status();
+        assert!(
+            matches!(status, Ok(s) if s.success()),
+            "ffmpeg accepts {spec}"
+        );
+    }
+
+    fn has_drawtext() -> bool {
+        crate::util::proc::which("ffmpeg").is_some()
+            && std::process::Command::new("ffmpeg")
+                .args(["-hide_banner", "-filters"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).contains(" drawtext "))
+                .unwrap_or(false)
+    }
+
+    /// A serif face renders visibly differently from drawtext's own default, which is what makes
+    /// "the intended face was used" measurable instead of asserted. Any installed face is accepted
+    /// so the test still runs elsewhere.
+    fn a_font_file() -> Option<PathBuf> {
+        [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        ]
+        .iter()
+        .map(PathBuf::from)
+        .find(|path| path.is_file())
+    }
+
+    fn render_frame(dir: &Path, spec: &str, name: &str) -> Option<Vec<u8>> {
+        let out = dir.join(name);
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=420x140",
+                "-vf",
+                spec,
+                "-frames:v",
+                "1",
+            ])
+            .arg(&out)
+            .status()
+            .ok()?;
+        if !status.success() {
+            return None;
+        }
+        std::fs::read(&out).ok()
+    }
+
+    /// The regression this exists for: an apostrophe in the font path cannot be escaped into a
+    /// filtergraph, so `fontfile=` used to be dropped and drawtext rendered a different face with
+    /// no error at all. The frame is measured, not the string.
+    #[test]
+    fn ffmpeg_renders_the_intended_face_from_a_font_path_with_an_apostrophe() {
+        if !has_drawtext() {
+            return;
+        }
+        let Some(source) = a_font_file() else { return };
+        let dir = tempfile::tempdir().unwrap();
+        let apostrophe_dir = dir.path().join("owner's fonts");
+        std::fs::create_dir_all(&apostrophe_dir).unwrap();
+        let apostrophe_font = apostrophe_dir.join("Requested Face.ttf");
+        std::fs::copy(&source, &apostrophe_font).unwrap();
+        let clean_font = dir.path().join("requested-face.ttf");
+        std::fs::copy(&source, &clean_font).unwrap();
+
+        let spec = |font: Option<&str>| {
+            drawtext(
+                "Sphinx of black quartz",
+                40,
+                "white",
+                "black",
+                0,
+                None,
+                TextPosition::Center,
+                TextAlign::Center,
+                font,
+                None,
+                &TextMotion::default(),
+                1.0,
+            )
+        };
+        let intended = spec(Some(clean_font.to_str().unwrap()));
+        let staged = spec(Some(apostrophe_font.to_str().unwrap()));
+        // What the old code produced for the very same font: no fontfile option at all.
+        let fallback = spec(None);
+
+        assert!(
+            staged.contains(":fontfile="),
+            "the apostrophe path keeps a font file: {staged}"
+        );
+        assert!(
+            !staged.contains("owner's"),
+            "the option names a staged stand-in, not the raw path: {staged}"
+        );
+
+        let intended_png = render_frame(dir.path(), &intended, "intended.png")
+            .expect("ffmpeg renders the reference frame");
+        let staged_png = render_frame(dir.path(), &staged, "staged.png")
+            .expect("ffmpeg renders the apostrophe font path");
+        let fallback_png =
+            render_frame(dir.path(), &fallback, "fallback.png").expect("ffmpeg renders no font");
+
+        let digest = |bytes: &[u8]| -> String {
+            use sha2::{Digest, Sha256};
+            Sha256::digest(bytes)
+                .iter()
+                .take(8)
+                .map(|b| format!("{b:02x}"))
+                .collect()
+        };
+        println!("frame face(intended, clean path) = {}", digest(&intended_png));
+        println!("frame face(apostrophe path) = {}", digest(&staged_png));
+        println!("frame face(no fontfile, the old behaviour) = {}", digest(&fallback_png));
+
+        assert_eq!(
+            intended_png, staged_png,
+            "a font named with an apostrophe renders the same face as the same font at a clean path"
+        );
+        if intended_png == fallback_png {
+            eprintln!(
+                "skipping the fallback comparison: this platform's default drawtext face is the requested face"
+            );
+        } else {
+            assert_ne!(
+                staged_png, fallback_png,
+                "the requested face must not degrade to the default one"
             );
         }
     }

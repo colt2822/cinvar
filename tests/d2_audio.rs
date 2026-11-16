@@ -176,20 +176,46 @@ fn ducking_lowers_music_only_while_speech_plays() {
     let ducked = render_it(&r, "ducked.mp4");
 
     let low = "lowpass=f=400,";
-    // Music band while speech is playing (4-5.5 s) versus after speech ends (6.8-7.8 s).
+    // Music band while speech is playing (4-5.5 s), after it stops (6.8-7.8 s) and on the last
+    // frames. Every window is measured on both renders, so the two-pass loudness gain (which
+    // differs between them, the ducked mix being quieter overall) cancels out.
     let during_plain = rms_db(&plain, 4.0, 1.5, low);
     let during_duck = rms_db(&ducked, 4.0, 1.5, low);
-    let after_duck = rms_db(&ducked, 6.8, 1.0, low);
-    let before_duck = rms_db(&ducked, 0.5, 1.5, low);
-    eprintln!("music band: plain-during {during_plain:.1}  ducked-during {during_duck:.1}  ducked-after {after_duck:.1} ducked-before {before_duck:.1}");
+    let windows = [
+        (0.5, 1.5, "before the speech"),
+        (6.8, 1.0, "after the speech"),
+        (7.4, 0.5, "on the last frames"),
+    ];
+    let levels: Vec<(f64, f64)> = windows
+        .iter()
+        .map(|(start, len, _)| {
+            (
+                rms_db(&plain, *start, *len, low),
+                rms_db(&ducked, *start, *len, low),
+            )
+        })
+        .collect();
+    eprintln!(
+        "music band: plain-during {during_plain:.1}  ducked-during {during_duck:.1}  windows {:?}",
+        levels
+    );
     assert!(
         during_plain - during_duck >= 6.0,
         "music is at least 6 dB lower under speech: {during_plain} vs {during_duck}"
     );
-    assert!(
-        (before_duck - after_duck).abs() < 3.0,
-        "music recovers to its normal level after speech: {before_duck} vs {after_duck}"
-    );
+    // The ducked render's own offset against the unducked one, measured while nothing is ducked,
+    // is the two-pass gain difference. Every later window must keep that same offset: a ducking
+    // that never releases, or a render that loses the tail of the ducked branch to silence, moves
+    // it by far more than this tolerance.
+    let unducked_offset = levels[0].0 - levels[0].1;
+    for (n, (start, len, what)) in windows.iter().enumerate().skip(1) {
+        let (reference, ducked_level) = levels[n];
+        let offset = reference - ducked_level;
+        assert!(
+            (offset - unducked_offset).abs() < 1.5,
+            "music is back to its unducked level {what} ({start}s+{len}s): offset {offset:.2} vs {unducked_offset:.2} ({reference} / {ducked_level})"
+        );
+    }
     let speech_plain = rms_db(&plain, 4.0, 1.5, "highpass=f=600,");
     let speech_duck = rms_db(&ducked, 4.0, 1.5, "highpass=f=600,");
     assert!(

@@ -301,6 +301,79 @@ pub fn black_spans(path: &Path, min_secs: f64, pixel_ratio: f64) -> Result<Vec<B
     Ok(parse_black_spans(&out.stderr))
 }
 
+/// Frozen (static picture) spans measured with ffmpeg's freezedetect filter.
+pub struct FreezeSpan {
+    pub start: f64,
+    pub end: f64,
+}
+
+impl FreezeSpan {
+    pub fn duration(&self) -> f64 {
+        self.end - self.start
+    }
+}
+
+pub fn freeze_spans(path: &Path, min_secs: f64, noise: f64) -> Result<Vec<FreezeSpan>> {
+    let bin = ffmpeg()?;
+    let filter = format!("freezedetect=n={noise}:d={min_secs}");
+    let args = vec![
+        "-hide_banner".to_string(),
+        "-nostdin".to_string(),
+        "-i".to_string(),
+        path.to_string_lossy().to_string(),
+        "-vf".to_string(),
+        filter,
+        "-an".to_string(),
+        "-f".to_string(),
+        "null".to_string(),
+        "-".to_string(),
+    ];
+    let out = proc::run(
+        &bin,
+        &args,
+        &ProcOpts::default().with_timeout(PROBE_TIMEOUT_SECS),
+    )?;
+    if !out.success {
+        return Err(Error::new(
+            ErrorCode::Render,
+            format!("freezedetect failed: {}", redacted(&out.tail_stderr(3))),
+        ));
+    }
+    // A freeze still active at end-of-file never gets a freeze_duration line;
+    // close it at the file's measured duration instead.
+    let duration = crate::qa::probe::probe(path).ok().map(|p| p.duration.as_secs_f64());
+    Ok(parse_freeze_spans_with_duration(&out.stderr, duration))
+}
+
+pub fn parse_freeze_spans(stderr: &str) -> Vec<FreezeSpan> {
+    parse_freeze_spans_with_duration(stderr, None)
+}
+
+pub fn parse_freeze_spans_with_duration(stderr: &str, file_duration: Option<f64>) -> Vec<FreezeSpan> {
+    let mut spans = Vec::new();
+    let mut start: Option<f64> = None;
+    for line in stderr.lines() {
+        if line.contains("freeze_start:") {
+            start = field_after(line, "freeze_start:").flatten();
+        } else if line.contains("freeze_duration:") {
+            let duration = field_after(line, "freeze_duration:").flatten().unwrap_or(0.0);
+            if let Some(s) = start.take() {
+                spans.push(FreezeSpan {
+                    start: s,
+                    end: s + duration,
+                });
+            }
+        }
+    }
+    if let (Some(s), Some(total)) = (start, file_duration) {
+        spans.push(FreezeSpan {
+            start: s,
+            end: total,
+        });
+    }
+    spans
+}
+
 pub fn parse_black_spans(stderr: &str) -> Vec<BlackSpan> {
     let mut spans = Vec::new();
     for line in stderr.lines() {

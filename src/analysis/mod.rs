@@ -1,5 +1,10 @@
 use std::path::Path;
 
+pub mod autoedit;
+pub mod autoeditor;
+pub mod pyscenedetect;
+pub mod semantic;
+
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};

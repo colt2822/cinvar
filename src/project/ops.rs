@@ -629,7 +629,7 @@ pub fn add_effect(
     kind: &str,
     params: serde_json::Value,
 ) -> Result<String> {
-    if !SUPPORTED_EFFECTS.contains(&kind) {
+    if !SUPPORTED_EFFECTS.contains(&kind) && !crate::render::extensions::is_registered(kind) {
         return Err(Error::invalid(format!(
             "unknown effect '{kind}' (supported: {})",
             SUPPORTED_EFFECTS.join(", ")

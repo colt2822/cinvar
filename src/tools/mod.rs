@@ -1,4 +1,5 @@
 pub mod groups;
+pub mod groups_blender;
 
 use std::collections::BTreeMap;
 
@@ -44,6 +45,33 @@ impl<'a> ToolCtx<'a> {
             self.history.record(self.project);
         }
     }
+}
+
+/// Gates that depend on the arguments rather than the tool name alone.
+///
+/// A tool can be free in principle and Pro past a limit (semantic indexing), so the tool table is
+/// not enough. Everything here runs before the tool body, so the caller never gets a partial
+/// result it would have to undo.
+fn gate_arguments(config: &Config, name: &str, args: &Value) -> Result<()> {
+    if name == "cinvar.scenes.index" {
+        let entitlements = crate::edition::resolve(config);
+        if let Some(root) = args.get("media_root").and_then(|v| v.as_str()) {
+            entitlements.check_semantic_clips(count_indexable_clips(std::path::Path::new(root)))?;
+        }
+    }
+    Ok(())
+}
+
+/// How many videos an index run over `dir` would cover (the same discovery the indexer uses).
+/// A path that does not resolve counts as zero: the tool itself reports the real problem.
+pub fn count_indexable_clips(dir: &std::path::Path) -> usize {
+    let abs = crate::util::paths::absolutize(
+        dir,
+        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+    );
+    crate::analysis::autoedit::collect_video_files(&abs)
+        .map(|files| files.len())
+        .unwrap_or(0)
 }
 
 pub type ToolFn = Box<dyn Fn(&mut ToolCtx, Value) -> Result<Value> + Send + Sync>;
@@ -113,12 +141,22 @@ impl Registry {
             Error::not_found(format!("unknown tool '{name}'"))
                 .with_hint("call tools/list to discover available tools")
         })?;
+        if let Some(feature) = crate::edition::tool_feature(name) {
+            crate::edition::resolve(ctx.config).check_feature(feature)?;
+        }
+        gate_arguments(ctx.config, name, &args)?;
         let args = if args.is_null() {
             Value::Object(Default::default())
         } else {
             args
         };
-        (tool.run)(ctx, args)
+        let revision_before = ctx.project.revision;
+        let recorded_args = ctx.config.actions.record.then(|| args.clone());
+        let result = (tool.run)(ctx, args);
+        if let Some(args) = recorded_args {
+            crate::actions::record(ctx, name, &args, revision_before, &result);
+        }
+        result
     }
 
     pub fn to_schemas(&self) -> Vec<crate::providers::ToolSchema> {
@@ -153,9 +191,22 @@ impl Registry {
     }
 }
 
+static EXTENSIONS: std::sync::RwLock<Vec<fn(&mut Registry)>> = std::sync::RwLock::new(Vec::new());
+
+/// Adds a function that registers extra tools into every registry built from now on (used by the
+/// separately licensed Pro module). Idempotent per function pointer.
+pub fn register_extension(f: fn(&mut Registry)) {
+    if let Ok(mut list) = EXTENSIONS.write() {
+        if !list.iter().any(|g| *g as usize == f as usize) {
+            list.push(f);
+        }
+    }
+}
+
 pub fn build_default() -> Registry {
     let mut registry = Registry::new();
     groups::register_project(&mut registry);
+    groups_blender::register_blender(&mut registry);
     groups::register_media(&mut registry);
     groups::register_timeline(&mut registry);
     groups::register_audio(&mut registry);
@@ -164,6 +215,11 @@ pub fn build_default() -> Registry {
     groups::register_creative(&mut registry);
     groups::register_color(&mut registry);
     groups::register_system(&mut registry);
+    if let Ok(list) = EXTENSIONS.read() {
+        for f in list.iter() {
+            f(&mut registry);
+        }
+    }
     registry
 }
 

@@ -145,6 +145,10 @@ pub fn bake_lut(
     size: u32,
     out: &Path,
 ) -> Result<Value> {
+    // Advanced grading is Pro. The tool table already refuses cinvar.color.apply_transform; this
+    // keeps any other caller (CLI, plugin, future module) from reaching the OCIO bake directly.
+    crate::edition::resolve_from_disk()
+        .check_feature(crate::edition::Feature::ColorAdvanced)?;
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent)?;
     }
