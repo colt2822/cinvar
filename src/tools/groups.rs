@@ -1299,8 +1299,7 @@ pub fn register_render(registry: &mut Registry) {
                     "burn_captions": b("Burn in the caption track (default true)"),
                     "hardware": s("auto | off | force: GPU encoder use (default from project settings)"),
                     "size_preset": s("720p | 1080p | 1440p | 4k | 8k (explicit width/height win)"),
-                    "bit_depth": i("8 or 10"),
-                    "video_bitrate": s("Target bitrate such as 8M or 5000k; replaces crf")
+                    "bit_depth": i("8 or 10")
                 }),
                 &[],
             ),
@@ -1309,7 +1308,7 @@ pub fn register_render(registry: &mut Registry) {
         |ctx: &mut ToolCtx, args: Value| {
             reject_unknown_args(
                 &args,
-                &["output", "width", "height", "fps", "crf", "codec", "format", "burn_captions", "hardware", "size_preset", "bit_depth", "video_bitrate"],
+                &["output", "width", "height", "fps", "crf", "codec", "format", "burn_captions", "hardware", "size_preset", "bit_depth"],
             )?;
             let output = match opt_str(&args, "output") {
                 Some(p) => {
@@ -1353,7 +1352,6 @@ pub fn register_render(registry: &mut Registry) {
                 Some(10) => Some(10),
                 Some(other) => return Err(Error::invalid(format!("bit_depth must be 8 or 10 (got {other})"))),
             };
-            request.video_bitrate = opt_str(&args, "video_bitrate");
             let project = ctx.project.clone();
             let store = ctx.store.clone();
             let output_for_reply = request.output.to_string_lossy().to_string();

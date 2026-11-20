@@ -38,7 +38,7 @@ fn declared_arguments_are_in_the_schema() {
     let registry = cinvar::tools::build_default();
     let schemas = registry.to_schemas();
     let t = schemas.iter().find(|s| s.name == "cinvar.render.export").unwrap();
-    for k in ["hardware", "size_preset", "bit_depth", "video_bitrate"] {
+    for k in ["hardware", "size_preset", "bit_depth"] {
         assert!(t.input_schema["properties"].get(k).is_some(), "{k} missing from schema");
     }
 }
