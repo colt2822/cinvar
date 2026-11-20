@@ -47,6 +47,18 @@ pub(crate) fn req_str(args: &Value, key: &str) -> Result<String> {
     }
 }
 
+/// Fail on any argument the tool does not declare, so a caller never believes a parameter took effect when it was dropped.
+pub(crate) fn reject_unknown_args(args: &Value, allowed: &[&str]) -> Result<()> {
+    if let Some(map) = args.as_object() {
+        let unknown: Vec<&str> = map.keys().map(|k| k.as_str()).filter(|k| !allowed.contains(k)).collect();
+        if !unknown.is_empty() {
+            return Err(Error::invalid(format!("unknown argument(s): {}", unknown.join(", ")))
+                .with_hint(format!("accepted: {}", allowed.join(", "))));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn opt_str(args: &Value, key: &str) -> Option<String> {
     args.get(key)
         .and_then(|v| v.as_str())
@@ -1284,13 +1296,21 @@ pub fn register_render(registry: &mut Registry) {
                     "crf": i("Quality 0-51, lower is better (default from project settings)"),
                     "codec": s("h264 | hevc | vp9 (default h264)"),
                     "format": s("mp4 | mov | webm"),
-                    "burn_captions": b("Burn in the caption track (default true)")
+                    "burn_captions": b("Burn in the caption track (default true)"),
+                    "hardware": s("auto | off | force: GPU encoder use (default from project settings)"),
+                    "size_preset": s("720p | 1080p | 1440p | 4k | 8k (explicit width/height win)"),
+                    "bit_depth": i("8 or 10"),
+                    "video_bitrate": s("Target bitrate such as 8M or 5000k; replaces crf")
                 }),
                 &[],
             ),
             false,
         ),
         |ctx: &mut ToolCtx, args: Value| {
+            reject_unknown_args(
+                &args,
+                &["output", "width", "height", "fps", "crf", "codec", "format", "burn_captions", "hardware", "size_preset", "bit_depth", "video_bitrate"],
+            )?;
             let output = match opt_str(&args, "output") {
                 Some(p) => {
                     // Relative outputs are relative to the PROJECT (as the hint says), not the cwd.
@@ -1319,6 +1339,21 @@ pub fn register_render(registry: &mut Registry) {
             request.codec = opt_str(&args, "codec");
             request.format = opt_str(&args, "format");
             request.burn_captions = opt_bool(&args, "burn_captions").unwrap_or(true);
+            request.hardware = match opt_str(&args, "hardware").as_deref() {
+                None => None,
+                Some("auto") => Some(crate::project::model::HwMode::Auto),
+                Some("off") => Some(crate::project::model::HwMode::Off),
+                Some("force") => Some(crate::project::model::HwMode::Force),
+                Some(other) => return Err(Error::invalid(format!("hardware must be auto, off or force (got '{other}')"))),
+            };
+            request.size_preset = opt_str(&args, "size_preset");
+            request.bit_depth = match opt_int(&args, "bit_depth") {
+                None => None,
+                Some(8) => Some(8),
+                Some(10) => Some(10),
+                Some(other) => return Err(Error::invalid(format!("bit_depth must be 8 or 10 (got {other})"))),
+            };
+            request.video_bitrate = opt_str(&args, "video_bitrate");
             let project = ctx.project.clone();
             let store = ctx.store.clone();
             let output_for_reply = request.output.to_string_lossy().to_string();
