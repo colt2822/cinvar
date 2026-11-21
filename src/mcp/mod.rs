@@ -266,10 +266,23 @@ impl McpServer {
     fn open_project(&self) -> Result<ProjectStore> {
         let dir = self.project_dir.as_ref().ok_or_else(|| {
             Error::not_found("this MCP server has no project directory")
-                .with_hint("pass --project <dir> when starting cinvar mcp serve")
+                .with_hint(if self.is_inspector() {
+                    "choose a Cinvar project folder in this extension's settings"
+                } else {
+                    "pass --project <dir> when starting cinvar mcp serve"
+                })
         })?;
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        ProjectStore::open(&paths::absolutize(dir, &cwd))
+        let root = paths::absolutize(dir, &cwd);
+        ProjectStore::open(&root).map_err(|err| {
+            if self.is_inspector() && err.code == ErrorCode::NotFound {
+                // The CLI's own hint tells people to run `cinvar project create`; extension users have no CLI.
+                Error::not_found(format!("no Cinvar project (project.json) found in {}", root.display()))
+                    .with_hint("choose the folder that contains project.json in this extension's settings")
+            } else {
+                err
+            }
+        })
     }
 
     /// Append one line per tool call to `<project>/sessions/mcp-calls.jsonl`. This is the evidence

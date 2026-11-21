@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "cinvar-project-inspector",
   "display_name": "Cinvar Project Inspector",
-  "version": "0.2.0-inspector.1",
+  "version": "0.2.0-inspector.2",
   "description": "Inspect a local Cinvar project and check it before export. Read-only.",
   "long_description": "Pick a Cinvar project folder and ask Claude to summarize it, check it for structural problems (missing media, overlaps, empty timelines) or tell you what would stop it exporting on this machine. Three read-only tools. It cannot edit, render, generate or export anything, and it does not use the network.",
   "author": {

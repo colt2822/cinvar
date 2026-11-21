@@ -208,7 +208,9 @@ fn a_missing_project_gives_an_actionable_error() {
     let mut s = Server::start(&missing, &cfg, &[]);
     let r = s.call("cinvar.project.status", json!({}));
     assert_eq!(r["result"]["isError"], true, "{r}");
-    assert!(text(&r).contains("no CINVAR project"), "{r}");
+    assert!(text(&r).contains("no Cinvar project"), "{r}");
+    assert!(text(&r).contains("extension's settings"), "{r}");
+    assert!(!text(&r).contains("cinvar project create"), "must not point extension users at the CLI: {r}");
 }
 
 #[test]
