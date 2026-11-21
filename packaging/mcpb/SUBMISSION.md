@@ -2,8 +2,8 @@
 
 ## Artifact (the exact file to test, host and submit)
 - `cinvar-project-inspector-0.2.0-inspector.1-linux-x64.mcpb`
-- SHA-256 `5e47dbe0890e4493f7652117dde37aeb6004e7c161f109f15dde4080a3be525d`
-- Contains `cinvar 0.2.0` binary (SHA-256 `f6dac826767351be5cb1beb56557d970b30f17400c9c47be0cb315c4ebc6f798`) built from commit `fa9bee5` (release profile). `mcpb validate` and `mcpb pack` passed.
+- SHA-256 `c2fecea31181a8991e0096a982499057880b47656410245f6a3514060370b690`
+- Contains `cinvar 0.2.0` binary (SHA-256 `437be1776f3e7b58dadfa558469edd9d2e91f78d251cf0057450a4b6fcfdcf68`) built from the source of this branch (origin/main 32b3751 + the inspector commits; later commits are docs-only), release profile. `mcpb validate` and `mcpb pack` passed.
 - Smoke test done on the unpacked file with a minimal environment: initialize (2024-11-05), tools/list
   returns exactly 3 tools, all 3 work on the sample, `cinvar.ai.generate_video` is refused even with
   `CINVAR_MCP_PERMISSIONS=full`.
