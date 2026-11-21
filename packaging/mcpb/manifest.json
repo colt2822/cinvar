@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.2",
+  "manifest_version": "0.3",
   "name": "cinvar-project-inspector",
   "display_name": "Cinvar Project Inspector",
   "version": "0.2.0-inspector.1",
@@ -7,7 +7,8 @@
   "long_description": "Pick a Cinvar project folder and ask Claude to summarize it, check it for structural problems (missing media, overlaps, empty timelines) or tell you what would stop it exporting on this machine. Three read-only tools. It cannot edit, render, generate or export anything, and it does not use the network.",
   "author": {
     "name": "Colton McClain",
-    "url": "https://github.com/colt2822/cinvar"
+    "email": "colt@elyraon.com.co",
+    "url": "https://elyraon.com.co/cinvar/"
   },
   "repository": {
     "type": "git",
@@ -53,5 +54,10 @@
     "platforms": [
       "linux"
     ]
-  }
+  },
+  "homepage": "https://elyraon.com.co/cinvar/",
+  "support": "https://elyraon.com.co/contact/",
+  "privacy_policies": [
+    "https://elyraon.com.co/privacy/"
+  ]
 }
