@@ -44,10 +44,21 @@ pub enum Level {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
+    /// Fixed three-tool allowlist for the directory-listed "Project Inspector". Never reachable
+    /// from `CINVAR_MCP_PERMISSIONS`; only the dedicated `mcp inspector` entry point sets it.
+    Inspector,
     ReadOnly,
     Edit,
     Full,
 }
+
+/// The only tools the inspector entry point lists or dispatches (natives; aliases resolve to a
+/// native name first, so an alias of anything outside this list is refused too).
+pub const INSPECTOR_TOOLS: &[&str] = &[
+    "cinvar.project.status",
+    "cinvar.qa.project_check",
+    "cinvar.render.preflight",
+];
 
 impl Mode {
     pub fn parse(s: &str) -> Option<Mode> {
@@ -69,11 +80,40 @@ impl Mode {
 
     pub fn allows(self, level: Level) -> bool {
         match self {
+            Mode::Inspector => false, // decided per tool by `allows_tool`, never by level
             Mode::ReadOnly => level == Level::Read,
             Mode::Edit => level <= Level::Edit,
             Mode::Full => true,
         }
     }
+}
+
+impl Mode {
+    /// Whether this mode may list and call the native tool `name`.
+    pub fn allows_tool(self, name: &str) -> bool {
+        match self {
+            Mode::Inspector => INSPECTOR_TOOLS.contains(&name),
+            other => other.allows(level_of(name)),
+        }
+    }
+}
+
+/// MCP tool annotations (title + behaviour hints) for the inspector tools. All three only read
+/// project state; none deletes or overwrites anything; none reaches the network.
+pub fn inspector_annotations(name: &str) -> Option<serde_json::Value> {
+    let title = match name {
+        "cinvar.project.status" => "Summarize Cinvar project",
+        "cinvar.qa.project_check" => "Check Cinvar project for problems",
+        "cinvar.render.preflight" => "Check whether the project can be exported",
+        _ => return None,
+    };
+    Some(serde_json::json!({
+        "title": title,
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+    }))
 }
 
 const READ_TOOLS: &[&str] = &[
@@ -202,6 +242,28 @@ mod tests {
         assert!(Mode::Edit.allows(Level::Edit) && !Mode::Edit.allows(Level::Spend));
         assert!(Mode::Full.allows(Level::Admin));
         assert_eq!(Mode::parse("garbage"), None);
+    }
+
+    #[test]
+    fn inspector_is_not_reachable_from_the_environment() {
+        assert_eq!(Mode::parse("inspector"), None);
+    }
+
+    #[test]
+    fn inspector_allows_exactly_three_tools() {
+        let registry = crate::tools::build_default();
+        let allowed: Vec<_> = registry
+            .specs()
+            .iter()
+            .filter(|s| Mode::Inspector.allows_tool(&s.name))
+            .map(|s| s.name.clone())
+            .collect();
+        assert_eq!(allowed.len(), INSPECTOR_TOOLS.len(), "{allowed:?}");
+        for t in INSPECTOR_TOOLS {
+            assert!(inspector_annotations(t).is_some());
+        }
+        assert!(!Mode::Inspector.allows_tool("cinvar.ai.generate_video"));
+        assert!(!Mode::Inspector.allows_tool("cinvar.media.inspect"));
     }
 
     #[test]

@@ -45,6 +45,21 @@ impl McpServer {
         }
     }
 
+    /// The Project Inspector entry point: fixed allowlist, own instructions, ignores
+    /// `CINVAR_MCP_PERMISSIONS` and `CINVAR_MCP_NAMES` entirely.
+    pub fn inspector(registry: Registry, project_dir: Option<PathBuf>) -> McpServer {
+        McpServer {
+            registry,
+            project_dir,
+            safe_names: false,
+            mode: compat::Mode::Inspector,
+        }
+    }
+
+    fn is_inspector(&self) -> bool {
+        self.mode == compat::Mode::Inspector
+    }
+
     pub fn serve_stdio(&mut self) -> Result<()> {
         let stdin = std::io::stdin();
         let mut reader = BufReader::new(stdin.lock());
@@ -101,19 +116,25 @@ impl McpServer {
         }
 
         let outcome: std::result::Result<Value, (i64, String)> = match method.as_str() {
-            "initialize" => Ok(initialize_result()),
+            "initialize" => Ok(initialize_result(self.is_inspector())),
             "ping" => Ok(json!({})),
             "tools/list" => Ok(json!({
                 "tools": self
                     .registry
                     .specs()
                     .iter()
-                    .filter(|spec| self.mode.allows(compat::level_of(&spec.name)))
-                    .map(|spec| json!({
-                        "name": if self.safe_names { compat::safe_name(&spec.name) } else { spec.name.clone() },
-                        "description": spec.description,
-                        "inputSchema": spec.input,
-                    }))
+                    .filter(|spec| self.mode.allows_tool(&spec.name))
+                    .map(|spec| {
+                        let mut tool = json!({
+                            "name": if self.safe_names { compat::safe_name(&spec.name) } else { spec.name.clone() },
+                            "description": spec.description,
+                            "inputSchema": spec.input,
+                        });
+                        if let Some(a) = compat::inspector_annotations(&spec.name).filter(|_| self.is_inspector()) {
+                            tool["annotations"] = a;
+                        }
+                        tool
+                    })
                     .collect::<Vec<_>>(),
             })),
             "tools/call" => self.tool_call(&params, jobs, history),
@@ -146,12 +167,17 @@ impl McpServer {
             return Err((INVALID_PARAMS, format!("unknown tool '{name}'")));
         };
         let level = compat::level_of(&name);
-        if !self.mode.allows(level) {
+        if !self.mode.allows_tool(&name) {
+            let hint = if self.is_inspector() {
+                format!("this extension only offers: {}", compat::INSPECTOR_TOOLS.join(", "))
+            } else {
+                "restart the server with CINVAR_MCP_PERMISSIONS=full if you intend to allow it".to_string()
+            };
             return Ok(content(
                 &json!({"error": {
                     "code": "permission_denied",
-                    "message": format!("{name} needs {level:?} permission; this MCP session allows {:?} only", self.mode),
-                    "hint": "restart the server with CINVAR_MCP_PERMISSIONS=full if you intend to allow it"
+                    "message": format!("{name} is not available in this session ({level:?}-level tool; mode {:?})", self.mode),
+                    "hint": hint
                 }}),
                 true,
             ));
@@ -173,7 +199,7 @@ impl McpServer {
             "description": "Assets, timelines, tracks, captions and validation issues of the open project",
             "mimeType": "application/json",
         })];
-        if self.open_project().is_ok() {
+        if !self.is_inspector() && self.open_project().is_ok() {
             out.push(json!({
                 "uri": PROJECT_URI,
                 "name": "project.json",
@@ -211,6 +237,10 @@ impl McpServer {
                     "text": serde_json::to_string_pretty(&value).unwrap_or_default(),
                 }]}))
             }
+            PROJECT_URI if self.is_inspector() => Err((
+                INVALID_PARAMS,
+                format!("resource '{uri}' is not available in the Project Inspector"),
+            )),
             PROJECT_URI => {
                 let store = self
                     .open_project()
@@ -246,6 +276,9 @@ impl McpServer {
     /// for how a model actually used the tools (call counts, errors, slow calls). Arguments are
     /// not logged, so it never holds secrets or file contents.
     fn log_call(&self, name: &str, elapsed: std::time::Duration, err: Option<&Error>) {
+        if self.is_inspector() {
+            return; // the inspector never writes into the user's project folder
+        }
         let Ok(store) = self.open_project() else {
             return;
         };
@@ -278,8 +311,17 @@ impl McpServer {
     ) -> Result<Value> {
         let store = self.open_project()?;
         // Serialise load -> edit -> save across processes (another MCP session or the CLI).
-        let _lock = store.lock(std::time::Duration::from_secs(20))?;
+        // The inspector never saves, so it takes no lock (and leaves no lock file behind).
+        let _lock = if self.is_inspector() {
+            None
+        } else {
+            Some(store.lock(std::time::Duration::from_secs(20))?)
+        };
         let mut project = store.load()?;
+        if self.is_inspector() {
+            // In memory only (the inspector never saves): a file deleted after import shows up live.
+            let _ = store.refresh_missing(&mut project);
+        }
         let config = Config::load().unwrap_or_default();
         let mut ctx = ToolCtx {
             project: &mut project,
@@ -306,7 +348,17 @@ Workflow (follow it, do not guess):
 
 Rules: motion and effects must serve the story (see the decision-framework skill). Tools refuse unsupported requests with an explanation instead of approximating - read errors and follow their hints. Times accept seconds (12.5) or MM:SS.";
 
-fn initialize_result() -> Value {
+const INSPECTOR_INSTRUCTIONS: &str = "\
+Cinvar Project Inspector: read-only checks of one local Cinvar project folder the user selected. It cannot edit, render, generate or export anything.
+
+Tools:
+- cinvar.project.status - summarize the project: assets, timelines, tracks, captions, validation issues.
+- cinvar.qa.project_check - look for structural problems: missing assets, overlaps, empty timelines, zero-length clips.
+- cinvar.render.preflight - say whether an export would be feasible on this machine (encoder, memory, disk, upscaling) without rendering. Optional size_preset: 720p | 1080p | 1440p | 4k | 8k.
+
+For 'what would stop this exporting?' run project_check, then preflight, and report each issue with the clip or asset it concerns. Report only what the tools returned. If the user asks to change the project, say this extension is inspection-only.";
+
+fn initialize_result(inspector: bool) -> Value {
     json!({
         "protocolVersion": PROTOCOL_VERSION,
         "capabilities": {
@@ -314,7 +366,7 @@ fn initialize_result() -> Value {
             "resources": {"subscribe": false},
         },
         "serverInfo": {"name": "cinvar", "version": crate::VERSION},
-        "instructions": INSTRUCTIONS,
+        "instructions": if inspector { INSPECTOR_INSTRUCTIONS } else { INSTRUCTIONS },
     })
 }
 

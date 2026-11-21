@@ -484,6 +484,9 @@ enum PluginsCmd {
 #[derive(Subcommand, Debug)]
 enum McpCmd {
     Serve,
+    /// Read-only Project Inspector: exactly project.status, qa.project_check, render.preflight.
+    /// Ignores CINVAR_MCP_PERMISSIONS. Packaged as the Claude Desktop extension.
+    Inspector,
 }
 
 #[derive(Subcommand, Debug)]
@@ -1113,6 +1116,13 @@ fn dispatch(cli: &Cli) -> Result<()> {
                     crate::tools::build_with_plugins(
                         &crate::config::Config::load().unwrap_or_default(),
                     ),
+                    cli.project.clone(),
+                );
+                server.serve_stdio()
+            }
+            McpCmd::Inspector => {
+                let mut server = crate::mcp::McpServer::inspector(
+                    crate::tools::build_default(),
                     cli.project.clone(),
                 );
                 server.serve_stdio()
