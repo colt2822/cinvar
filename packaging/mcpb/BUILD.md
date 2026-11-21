@@ -1,6 +1,6 @@
 # Building the Project Inspector bundle
 
-1. `cargo build --release --bin cinvar` on the target OS (macOS, Windows or Linux x86-64).
+1. `cargo build --release --bin cinvar` on the target OS (only Linux x86-64 has been built and tested so far).
 2. Stage: `mkdir -p stage/server && cp target/release/cinvar[.exe] stage/server/ && cp packaging/mcpb/manifest.json stage/`
 3. Validate and pack (downloads the official MCPB CLI, so run it yourself): `npx @anthropic-ai/mcpb validate stage/manifest.json && npx @anthropic-ai/mcpb pack stage cinvar-project-inspector-0.2.0-inspector.1-<os>.mcpb`
 4. `sha256sum` the .mcpb. Use that exact file for Desktop testing, the reviewer download and the application.

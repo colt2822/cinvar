@@ -5,27 +5,41 @@
   "version": "0.2.0-inspector.1",
   "description": "Inspect a local Cinvar project and check it before export. Read-only.",
   "long_description": "Pick a Cinvar project folder and ask Claude to summarize it, check it for structural problems (missing media, overlaps, empty timelines) or tell you what would stop it exporting on this machine. Three read-only tools. It cannot edit, render, generate or export anything, and it does not use the network.",
-  "author": { "name": "Colton McClain", "url": "https://github.com/colt2822/cinvar" },
-  "repository": { "type": "git", "url": "https://github.com/colt2822/cinvar" },
+  "author": {
+    "name": "Colton McClain",
+    "url": "https://github.com/colt2822/cinvar"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/colt2822/cinvar"
+  },
   "license": "Apache-2.0",
   "server": {
     "type": "binary",
     "entry_point": "server/cinvar",
     "mcp_config": {
       "command": "${__dirname}/server/cinvar",
-      "args": ["mcp", "inspector", "--project", "${user_config.project_dir}"],
-      "platforms": {
-        "win32": {
-          "command": "${__dirname}\\server\\cinvar.exe",
-          "args": ["mcp", "inspector", "--project", "${user_config.project_dir}"]
-        }
-      }
+      "args": [
+        "mcp",
+        "inspector",
+        "--project",
+        "${user_config.project_dir}"
+      ]
     }
   },
   "tools": [
-    { "name": "cinvar.project.status", "description": "Summarize the project: assets, timelines, tracks, captions, issues." },
-    { "name": "cinvar.qa.project_check", "description": "Check for missing media, overlaps, empty timelines, zero-length clips." },
-    { "name": "cinvar.render.preflight", "description": "Check whether an export is feasible on this machine, without rendering." }
+    {
+      "name": "cinvar.project.status",
+      "description": "Summarize the project: assets, timelines, tracks, captions, issues."
+    },
+    {
+      "name": "cinvar.qa.project_check",
+      "description": "Check for missing media, overlaps, empty timelines, zero-length clips."
+    },
+    {
+      "name": "cinvar.render.preflight",
+      "description": "Check whether an export is feasible on this machine, without rendering."
+    }
   ],
   "user_config": {
     "project_dir": {
@@ -35,5 +49,9 @@
       "required": true
     }
   },
-  "compatibility": { "platforms": ["darwin", "win32", "linux"] }
+  "compatibility": {
+    "platforms": [
+      "linux"
+    ]
+  }
 }
